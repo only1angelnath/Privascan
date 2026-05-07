@@ -1,19 +1,30 @@
 # PrivaScan — Privacy Protocol Smart Contract Risk Scoring API
 ## System Design & Technical Proposal
 
-```
+
 **Project Codename:** PrivaScan
+
 **Domain:** privascan.xyz
+
 **Version:** 1.0 (EVM only) — Final pre-build specification
+
 **Type:** Open-Source Public Good 
+
 **Primary Language:** Python
+
 **Deployment:** Railway (backend + workers + bot) · Vercel (frontend)
+
 **Scoring Model:** Rule-based deterministic
+
 **Concurrency Model:** Async I/O (FastAPI + asyncio) + Celery workers (CPU-bound)
+
 **Product Model:** Hybrid — curated EVM protocol registry + open EVM contract scanner
+
 **Protocol Coverage V1:** 19 curated EVM protocols (all contracts — pools, routers, vaults)
+
 **Protocol Coverage V2:** Non-EVM (Zcash, Monero, Penumbra)
-```
+
+
 
 ---
 

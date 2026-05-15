@@ -1,11 +1,24 @@
-*.env
-.venv
-*.venv
-.DS_Store
-node_modules
-yarn-error.log
+# ── Sensitive / private docs ───────────────────────────────────────────────────
+docs/*command_guide*
+docs/*ai_guide*
+*command_guide*
+privascan_dump.txt
+dump_privascan.sh
 
-# Python
+# ── Environment & secrets ──────────────────────────────────────────────────────
+.env
+.env.local
+.env.production
+.env.staging
+.env.*.local
+*.env
+*.pem
+*.key
+*.crt
+*.p12
+secrets/
+
+# ── Python ────────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -14,32 +27,65 @@ build/
 .venv/
 venv/
 *.egg
+*.so
+.Python
 
-# Environment
-.env
-.env.local
-.env.production
+# ── Virtual environments ───────────────────────────────────────────────────────
+.venv
+*.venv
 
-# IDE
+# ── IDE ───────────────────────────────────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
+*.swo
+*~
 
-# Testing
+# ── Testing & coverage ────────────────────────────────────────────────────────
 .pytest_cache/
 .coverage
 htmlcov/
+.tox/
+coverage.xml
+*.coveragerc
 
-# Alembic
-app/db/migrations/versions/*.py
-
-# Logs
+# ── Logs ──────────────────────────────────────────────────────────────────────
 *.log
+logs/
+slither_output/
+slither-report.json
 
-# OS
+# ── Celery ────────────────────────────────────────────────────────────────────
+celerybeat-schedule
+celerybeat-schedule.db
+celerybeat.pid
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+docker-compose.override.yml
+docker-compose.local.yml
+
+# ── OS ────────────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+*.tmp
 
-# Celery
-celerybeat-schedule
-celerybeat.pid
+# ── Node (frontend) ───────────────────────────────────────────────────────────
+node_modules/
+yarn-error.log
+.next/
+.vercel/
+out/
+
+# ── Slither temp files ────────────────────────────────────────────────────────
+crytic-export/
+.slither/
+*.slither.json
+
+# ── DB dumps & local scripts ──────────────────────────────────────────────────
+*.sql
+*.dump
+*.sqlite
+*.db
+
+# NOTE: app/db/migrations/versions/*.py is intentionally NOT ignored.
+# Migration files must be committed — they build the DB on Railway.

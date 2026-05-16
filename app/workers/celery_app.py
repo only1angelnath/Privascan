@@ -1,4 +1,5 @@
 from celery import Celery
+from celery.schedules import crontab
 from app.config import settings
 
 celery_app = Celery(
@@ -21,3 +22,31 @@ celery_app.conf.update(
     enable_utc=True,
     beat_schedule_filename="/tmp/celerybeat-schedule",
 )
+
+celery_app.conf.beat_schedule = {
+    # Rescore all 14 curated protocols every 6 hours
+    "rescore-all-curated": {
+        "task": "app.workers.tasks.rescore_all_curated",
+        "schedule": crontab(minute=0, hour="*/6"),
+    },
+    # Rescore watchlist contracts daily at 2am UTC
+    "rescore-watchlist": {
+        "task": "app.workers.tasks.rescore_watchlist_addresses",
+        "schedule": crontab(minute=0, hour=2),
+    },
+    # Download OFAC consolidated list daily at 3am UTC
+    "refresh-ofac-list": {
+        "task": "app.workers.tasks.refresh_ofac_list",
+        "schedule": crontab(minute=0, hour=3),
+    },
+    # Check for OFAC delistings at 3:30am UTC (30min after refresh)
+    "check-ofac-delisting": {
+        "task": "app.workers.tasks.check_ofac_delisting",
+        "schedule": crontab(minute=30, hour=3),
+    },
+    # Pull DeFiHackLabs weekly on Sunday at 4am UTC
+    "refresh-exploit-db": {
+        "task": "app.workers.tasks.refresh_exploit_db",
+        "schedule": crontab(minute=0, hour=4, day_of_week=0),
+    },
+}

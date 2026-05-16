@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.api.v1.router import api_router
+from app.api.admin import router as admin_router
 
 log = structlog.get_logger()
 
@@ -34,3 +35,4 @@ app.add_middleware(
 )
 
 app.include_router(api_router, prefix="/api/v1")
+app.include_router(admin_router, prefix="/admin", tags=["admin"])

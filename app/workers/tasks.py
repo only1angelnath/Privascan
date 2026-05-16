@@ -343,15 +343,64 @@ def rescore_watchlist_addresses(self):
                           contract.address, exc)
                 continue
 
-            new_score = result["code"]["score"]  # simplified — use composite in production
-            new_grade = "C"  # placeholder until aggregator wired in watchlist path
+            # ── Full composite: audit + compliance + aggregate ───────────────
+            from app.core.scoring.audit_analyser import analyse_audit
+            from app.core.scoring.compliance_analyser import analyse_compliance
+            from app.core.scoring.aggregator import aggregate
+            import uuid as _uuid
 
-            # Check each watcher's threshold
+            # Look up protocol_id if this is a curated contract
+            with get_sync_session() as _db:
+                from app.db.models import ProtocolContract as _PC
+                pc_row = _db.query(_PC).filter(
+                    _PC.address == contract.address,
+                    _PC.chain_id == contract.chain_id,
+                ).first()
+                protocol_id_str = str(pc_row.protocol_id) if pc_row else None
+
+            audit_score = analyse_audit(protocol_id=protocol_id_str)
+            compliance_score = analyse_compliance(address=contract.address)
+
+            agg = aggregate(
+                code_score=result["code"]["score"],
+                ownership_score=result["ownership"]["score"],
+                liquidity_score=result["liquidity"]["score"],
+                audit_score=audit_score,
+                compliance_score=compliance_score,
+            )
+
+            new_score = agg["composite_score"]
+            new_grade = agg["grade"]
+
+            # ── Store result in score_reports ─────────────────────────────────
+            from app.db.models import Contract as _ContractModel
+            with get_sync_session() as _db2:
+                c_row = _db2.query(_ContractModel).filter(
+                    _ContractModel.address == contract.address,
+                    _ContractModel.chain_id == contract.chain_id,
+                ).first()
+                if c_row:
+                    _db2.add(ScoreReport(
+                        id=str(_uuid.uuid4()),
+                        contract_id=c_row.id,
+                        protocol_id=protocol_id_str,
+                        composite_score=new_score,
+                        grade=new_grade,
+                        code_risk_score=result["code"]["score"],
+                        ownership_score=result["ownership"]["score"],
+                        liquidity_score=result["liquidity"]["score"],
+                        audit_score=audit_score,
+                        compliance_score=compliance_score,
+                        governance_score=50.0,
+                        override_applied=agg["override_applied"],
+                        override_status=agg["override_status"],
+                    ))
+
+            # ── Check each watcher's threshold ────────────────────────────────
             if old_score is not None:
                 delta = abs(new_score - old_score)
                 for watcher in data["watchers"]:
                     if delta >= watcher["threshold"]:
-                        # Publish alert to Redis → bot sends Telegram message
                         alert_payload = {
                             "chat_id": watcher["chat_id"],
                             "address": contract.address,
@@ -360,9 +409,9 @@ def rescore_watchlist_addresses(self):
                             "new_score": new_score,
                             "old_grade": old_grade or "?",
                             "new_grade": new_grade,
-                            "sub_scores": result.get("code", {}),
+                            "sub_scores": agg["sub_scores"],
                             "new_flags": result["code"].get("flags", [])[:5],
-                            "override_status": None,
+                            "override_status": agg["override_status"],
                         }
                         asyncio.run(
                             _publish_alert_async(alert_payload)

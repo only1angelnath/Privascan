@@ -15,7 +15,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from celery.result import AsyncResult
 
 from app.core.cache import get_cached_score, set_cached_score
@@ -23,6 +23,7 @@ from app.core.scoring.aggregator import aggregate
 from app.core.clients.chains import CHAINS
 from app.workers.celery_app import celery_app
 from app.core.overrides.engine import apply_overrides
+from app.api.v1.auth import get_api_key
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -200,7 +201,11 @@ async def poll_task(task_id: str):
 
 
 @router.post("/request")
-async def request_scan(body: dict):
+async def request_scan(
+    body: dict,
+    request: Request,
+    api_key_info: dict = Depends(get_api_key),
+):
     """
     Trigger an async community scan via Celery worker.
     Returns immediately with task_id — poll GET /task/{task_id} for result.
@@ -279,7 +284,12 @@ async def get_score_history(
 
 
 @router.get("/{chain}/{address}")
-async def get_score(chain: str, address: str):
+async def get_score(
+    chain: str,
+    address: str,
+    request: Request,
+    api_key_info: dict = Depends(get_api_key),
+):
     """
     Score any EVM contract. Returns cached result if fresh.
 

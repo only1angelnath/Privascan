@@ -281,7 +281,7 @@ def rescore_watchlist_addresses(self):
 # OFAC TASKS
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _extract_eth_addresses_from_sdn(xml_text: str) -> set[str]:
+def _extract_eth_addresses_from_ofac(xml_text: str) -> set[str]:
     """
     Parse OFAC SDN XML and extract all Ethereum addresses.
     Addresses appear in <feature> blocks with type 'Digital Currency Address - ETH'.
@@ -327,7 +327,7 @@ def refresh_ofac_list(self):
             resp = client.get(OFAC_SDN_URL)
             resp.raise_for_status()
         xml_text = resp.text
-        addresses = _extract_eth_addresses_from_sdn(xml_text)
+        addresses = _extract_eth_addresses_from_ofac(xml_text)
         log.info("task.refresh_ofac.parsed", address_count=len(addresses))
 
         if not addresses:
@@ -387,7 +387,7 @@ def check_ofac_delisting(self):
         with httpx.Client(timeout=60.0, follow_redirects=True) as client:
             resp = client.get(OFAC_SDN_URL)
             resp.raise_for_status()
-        current_addresses = _extract_eth_addresses_from_sdn(resp.text)
+        current_addresses = _extract_eth_addresses_from_ofac(resp.text)
 
         from app.db.session import get_sync_session
         from app.db.models import OfacAddress

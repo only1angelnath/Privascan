@@ -469,6 +469,52 @@ PROTOCOLS = [
             # NOTE: AnchorStateRegistry + L2OutputOracle are 0x000...000 (zero addr) — skipped
         ],
     },
+    # ──────────────────────────────────────────────────────────────────────────
+    # 14. IEXEC
+    # Source: iex.ec/developers/quick-reference-guide-to-iexec-protocol-addresses
+    # Chains: ethereum, arbitrum
+    # Testnets (Arbitrum Sepolia) excluded
+    # Audits: ChainSecurity, Consensys Diligence, Halborn
+    # ──────────────────────────────────────────────────────────────────────────
+    {
+        "name": "iExec",
+        "slug": "iexec",
+        "defillama_slug": None,
+        "description": "Decentralized computing marketplace with TEE-based confidential computing and data privacy. PoCo protocol manages trustless computation.",
+        "website_url": "https://www.iex.ec",
+        "github_url": "https://github.com/iExecBlockchainComputing",
+        "contracts": [
+            # ── Ethereum Mainnet ──────────────────────────────────────────────
+            {"address": "0x607f4c5bb672230e8672085532f7e901544a7375", "chain": "ethereum",  "role": "token",   "label": "RLC Token ETH",                   "is_primary": False},
+            {"address": "0x3eca1b216a7df1c7689aeb259efb04ad753aafe5", "chain": "ethereum",  "role": "pool",    "label": "PoCo Diamond Proxy ETH",          "is_primary": True},
+            {"address": "0x9950d94fb074182ee93ff79a50cd698c4983281f", "chain": "ethereum",  "role": "other",   "label": "AppRegistry ETH",                 "is_primary": False},
+            {"address": "0x07cc4e1ea30dd02796795876509a3bfc5053128d", "chain": "ethereum",  "role": "other",   "label": "DatasetRegistry ETH",             "is_primary": False},
+            {"address": "0xe3c13bb4a5068601c6a08041cb50887b07b5f398", "chain": "ethereum",  "role": "other",   "label": "WorkerpoolRegistry ETH",          "is_primary": False},
+            # ── Arbitrum Mainnet ──────────────────────────────────────────────
+            {"address": "0xe649e6a1f2afc63ca268c2363691cecaf75cf47c", "chain": "arbitrum",  "role": "token",   "label": "RLC Token ARB",                   "is_primary": False},
+            {"address": "0x098bfcb1e50ebca0baa92c12ea0c3f045a1ad9f0", "chain": "arbitrum",  "role": "pool",    "label": "PoCo Diamond Proxy ARB",          "is_primary": False},
+            {"address": "0x9950d94fb074182ee93ff79a50cd698c4983281f", "chain": "arbitrum",  "role": "other",   "label": "AppRegistry ARB",                 "is_primary": False},
+            {"address": "0x07cc4e1ea30dd02796795876509a3bfc5053128d", "chain": "arbitrum",  "role": "other",   "label": "DatasetRegistry ARB",             "is_primary": False},
+            {"address": "0xe3c13bb4a5068601c6a08041cb50887b07b5f398", "chain": "arbitrum",  "role": "other",   "label": "WorkerpoolRegistry ARB",          "is_primary": False},
+            # ── Arbitrum — Data Protector ─────────────────────────────────────
+            {"address": "0xf08f91f7646fdb95a4e24977b8db91318252a667", "chain": "arbitrum",  "role": "vault",   "label": "DataProtector Core",              "is_primary": False},
+            {"address": "0xe4f319adf2f3dbfd3270f35cec90575dc858a0da", "chain": "arbitrum",  "role": "other",   "label": "AddOnlyAppWhitelistRegistry",     "is_primary": False},
+            {"address": "0x2da2d268281d79b81d609d68e4507e7acdfd7e05", "chain": "arbitrum",  "role": "other",   "label": "DataProtector Sharing",           "is_primary": False},
+            # ── Arbitrum — Applications ───────────────────────────────────────
+            {"address": "0xfa9cceff9431ee0e2a3fe58911073f1357f24e31", "chain": "arbitrum",  "role": "other",   "label": "Web3Mail Whitelist",              "is_primary": False},
+            {"address": "0xa7101cf61d4602d55a715be4f2b9e1bc71d22301", "chain": "arbitrum",  "role": "other",   "label": "Web3Telegram Whitelist",          "is_primary": False},
+            {"address": "0x8ef2ec3ef9535d4b4349bfec7d8b31a580e60244", "chain": "arbitrum",  "role": "other",   "label": "Default Workerpool ARB",          "is_primary": False},
+        ],
+    },
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # 14. IEXEC
+    # Source: iex.ec/developers/quick-reference-guide-to-iexec-protocol-addresses
+    # Chains: ethereum, arbitrum
+    # Testnets (Arbitrum Sepolia) excluded
+    # Audits: ChainSecurity, Consensys Diligence, Halborn
+    # ──────────────────────────────────────────────────────────────────────────
+
 ]
 
 

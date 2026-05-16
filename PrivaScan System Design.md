@@ -20,7 +20,7 @@
 
 **Product Model:** Hybrid — curated EVM protocol registry + open EVM contract scanner
 
-**Protocol Coverage V1:** 13 curated EVM privacy protocols (all contracts — pools, routers, vaults, verifiers, treasury, staking, governance, bridges)
+**Protocol Coverage V1:** 14 curated EVM privacy protocols (all contracts — pools, routers, vaults, verifiers, treasury, staking, governance, bridges)
 
 **Protocol Coverage V2:** Non-EVM (Zcash, Monero, Penumbra) + additional EVM protocols via community PRD submissions
 
@@ -98,7 +98,7 @@ Every V1 score traces to a verifiable data point. No model weights, no inference
 API layer fully async (FastAPI + httpx + asyncpg + aioredis). Slither is CPU-bound — runs in Celery worker processes (separate OS processes, bypasses GIL). No manual threading.
 
 ### 4.3 Hybrid Two-Track Model
-Track A: 13 curated protocols, 6-hour scheduled rescore. Track B: any EVM contract, on-demand. Both use the same scoring engine.
+Track A: 14 curated protocols, 6-hour scheduled rescore. Track B: any EVM contract, on-demand. Both use the same scoring engine.
 
 ### 4.4 Multi-Contract Ecosystem Scoring
 We score all deployed contracts of a protocol, not just the token. Pools, routers, vaults, verifiers, timelock, governance — all analysed as a unified risk surface with an ecosystem-level composite score.
@@ -118,7 +118,7 @@ privascan.xyz — API: api.privascan.xyz · Frontend: privascan.xyz · Bot: @Pri
 
 ### 5.1 Track A — Curated Protocol Registry
 
-13 pre-seeded EVM privacy protocols (see Appendix B). Rescored every 6 hours via Celery beat. Cache TTL: 6 hours. Label: `"scan_type": "curated"`. Telegram alerts broadcast to all subscribers when composite score changes > 10 points or a new hard flag appears.
+14 pre-seeded EVM privacy protocols (see Appendix B). Rescored every 6 hours via Celery beat. Cache TTL: 6 hours. Label: `"scan_type": "curated"`. Telegram alerts broadcast to all subscribers when composite score changes > 10 points or a new hard flag appears.
 
 ### 5.2 Track B — Open EVM Contract Scanner
 
@@ -1383,10 +1383,10 @@ Redis token bucket rate limiting. EIP-55 address validation. Chain whitelist enf
 
 | Day(s) | Tasks | Deliverable |
 |---|---|---|
-|| 8–9 | Seed audit DB (13 protocols) · Seed protocol_contracts registry · OFAC refresh + resolution check task · DeFiHackLabs parser · Compliance + audit + governance analysers | All 6 sub-scores live · Full multi-contract pipeline |
+|| 8–9 | Seed audit DB (14 protocols) · Seed protocol_contracts registry · OFAC refresh + resolution check task · DeFiHackLabs parser · Compliance + audit + governance analysers | All 6 sub-scores live · Full multi-contract pipeline |
 | 10–11 | Telegram bot (all commands + visual message templates) · Watchlist + alert delivery (Redis pub/sub) · API key auth + rate limiting · Admin override endpoint | Bot live · Alerts firing with designed message format |
 | 12–13 | Next.js dashboard (v0.dev scaffold) · Score ring component · Radar chart · Sub-score bars with colour system · Ecosystem contracts table · Score history chart · TVL history chart · Override state page variants | Dashboard live at privascan.xyz with full visual system |
-| 14 | Seed all 13 curated protocols with contract registries · End-to-end test · README · GitHub public release · Demo video 3–5 min | MVP shipped |
+| 14 | Seed all 14 curated protocols with contract registries · End-to-end test · README · GitHub public release · Demo video 3–5 min | MVP shipped |
 
 ---
 
@@ -1400,7 +1400,7 @@ Redis token bucket rate limiting. EIP-55 address validation. Chain whitelist enf
 | GitHub repo (public, MIT) | Day 14 |
 | OpenAPI docs at /docs | End of Week 1 |
 | Demo video (3–5 min) | Day 14 |
-| 13 protocols seeded with contract registries | Day 9 ✅ |
+| 14 protocols seeded with contract registries | Day 9 ✅ |
 
 ---
 
@@ -1459,6 +1459,7 @@ Redis token bucket rate limiting. EIP-55 address validation. Chain whitelist enf
 | 11 | FOOM Cash | ETH, Base | Privacy mixer | `foom-cash` | DefiLlama (minimal) | Medium | 4 |
 | 12 | AnomaPay | ETH, ARB, Base, OP | Privacy payment adapter | — | Dune SIM (fallback) | Medium | 5 |
 | 13 | Horizen | Ethereum | zk-enabled L2 infrastructure | — | Dune SIM (fallback) | Medium | 14 |
+| 14 | iExec| Ethereum, ARB | Decentralized Computing Marketplace | — | Dune SIM (fallback) | Medium | 16 |
 
 **Removed from V1 (reason):**
 - Tornado Cash Nova — merged into TC registry (same operator)
@@ -1504,5 +1505,5 @@ defillama-sdk>=0.1.0
 
 *PrivaScan System Design v5.1 — Updated Day 9*
 *privascan.xyz · api.privascan.xyz · @PrivaScanBot*
-*V1: 13 EVM protocols · 176 contracts across 9 chains · Full ecosystem multi-contract scoring · Resolved override states · Visual design system*
+*V1: 14 EVM protocols · 197 contracts across 9 chains · Full ecosystem multi-contract scoring · Resolved override states · Visual design system*
 *V2: Non-EVM (Zcash, Monero) · ML sub-scores · Webhooks · Batch scoring · Additional EVM protocols*

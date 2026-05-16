@@ -127,3 +127,42 @@ docker compose exec worker python3 -m app.core.data.seed_protocols
 | `app/db/models.py` | `Protocol` and `ProtocolContract` ORM models |
 | `app/api/v1/protocols.py` | REST endpoints that read from the registry |
 | `docs/ADD_PROTOCOL.md` | This file |
+
+---
+
+## Adding audit records for a new protocol
+
+After seeding the protocol contracts, add its audit history to `app/core/data/seed_audits.py`:
+
+```python
+# In the AUDITS dict, add:
+"your-new-slug": [
+    {
+        "auditor": "Trail of Bits",   # auditor name
+        "auditor_tier": 1,             # 1=Tier1, 2=Tier2, 3=Tier3/community
+        "audit_date": date(2024, 6, 1),
+        "report_url": "https://link-to-report.pdf",
+        "critical_findings": 0,
+        "high_findings": 1,
+        "critical_resolved": True,
+        "is_formal_verification": False,
+    },
+],
+```
+
+Then run:
+```bash
+docker compose exec worker python3 -m app.core.data.seed_audits
+```
+
+**If the protocol has no public audits yet** — omit it from AUDITS entirely.
+The `audit_analyser` will return 80.0 (maximum audit risk) automatically.
+This is the correct behaviour — no audit = high risk.
+
+### Auditor tier reference
+
+| Tier | Auditors |
+|---|---|
+| 1 | Trail of Bits, OpenZeppelin, Consensys Diligence, Zellic, Spearbit, ABDK, Sigma Prime, Certora, Veridise |
+| 2 | Certik, Hacken, Quantstamp, Peckshield, Dedaub, Salus Security |
+| 3 | All others, community audits, internal reviews |

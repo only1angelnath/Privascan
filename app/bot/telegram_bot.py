@@ -1,5 +1,5 @@
 """
-Day 10 — Telegram bot — all commands implemented.
+Telegram bot — all commands implemented.
 """
 
 from __future__ import annotations
@@ -9,6 +9,7 @@ import logging
 import re
 
 import httpx
+import redis.asyncio as aioredis
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -367,6 +368,47 @@ async def cmd_watchlist(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         disable_web_page_preview=True,
     )
 
+    if not items:
+        await update.message.reply_text(
+            "⚠️ You have no watchlist protocols\\.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+
+async def cmd_verify(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    import random
+    chat_id = str(update.message.chat_id)
+    code = f"{random.randint(100000, 999999)}"
+    try:
+        # FIX 3: use redis.asyncio instead of blocking redis client
+        rc = aioredis.from_url(settings.redis_url, decode_responses=True)
+        await rc.setex(f"verify:{code}", 600, chat_id)
+        await rc.aclose()
+        await update.message.reply_text(
+            f"\U0001F510 PrivaScan Verification\n\n"
+            f"Your code: {code}\n\n"
+            f"Enter this at privascan.xyz/keys\n"
+            f"\u23F1 Expires in 10 minutes."
+        )
+    except Exception as e:
+        log.error("cmd_verify error: %s", e)
+        await update.message.reply_text(f"Error: {e}")
+
+
+async def cmd_admin_register(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = str(update.message.chat_id)
+    try:
+        # FIX 3: use redis.asyncio instead of blocking redis client
+        rc = aioredis.from_url(settings.redis_url, decode_responses=True)
+        await rc.set("privascan:admin_chat_id", chat_id)
+        await rc.aclose()
+        await update.message.reply_text(
+            f"\u2705 Admin registered. Chat ID saved.\n"
+            "You will now receive protocol request notifications here."
+        )
+    except Exception as e:
+        log.error("cmd_admin_register error: %s", e)
+        await update.message.reply_text(f"Error: {e}")
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ALERT DISPATCHER
@@ -401,17 +443,16 @@ async def _dispatch_alert(bot, payload: dict) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# ENTRY POINT — with retry loop
+# ENTRY POINT
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def main() -> None:
+async def main() -> None:  # FIX 1: was `def main()`, must be `async def`
     log.info("bot.start token_set=%s", bool(settings.telegram_bot_token))
 
     if not settings.telegram_bot_token:
         log.error("bot.no_token — set TELEGRAM_BOT_TOKEN in .env")
         return
 
-    # Retry loop — handles transient Telegram API timeouts on startup
     retry_delay = 5
     max_retries = 12  # ~1 minute total
 
@@ -419,7 +460,6 @@ async def main() -> None:
         try:
             log.info("bot.connect_attempt=%d", attempt)
 
-            # Generous timeouts for flaky connections
             request = HTTPXRequest(
                 connection_pool_size=8,
                 connect_timeout=30.0,
@@ -435,16 +475,20 @@ async def main() -> None:
                 .build()
             )
 
-            app.add_handler(CommandHandler("start",     cmd_start))
-            app.add_handler(CommandHandler("help",      cmd_help))
-            app.add_handler(CommandHandler("scan",      cmd_scan))
-            app.add_handler(CommandHandler("protocols", cmd_protocols))
-            app.add_handler(CommandHandler("watch",     cmd_watch))
-            app.add_handler(CommandHandler("unwatch",   cmd_unwatch))
-            app.add_handler(CommandHandler("watchlist", cmd_watchlist))
+            app.add_handler(CommandHandler("start",          cmd_start))
+            app.add_handler(CommandHandler("help",           cmd_help))
+            app.add_handler(CommandHandler("scan",           cmd_scan))
+            app.add_handler(CommandHandler("protocols",      cmd_protocols))
+            app.add_handler(CommandHandler("watch",          cmd_watch))
+            app.add_handler(CommandHandler("unwatch",        cmd_unwatch))
+            app.add_handler(CommandHandler("watchlist",      cmd_watchlist))
+            app.add_handler(CommandHandler("verify",         cmd_verify))
+            app.add_handler(CommandHandler("admin_register", cmd_admin_register))
 
             subscriber = AlertSubscriber(
-                lambda payload: _dispatch_alert(app.bot, payload)
+                lambda payload: asyncio.create_task(
+                    _dispatch_alert(app.bot, payload)
+                )
             )
 
             async with app:
@@ -469,10 +513,12 @@ async def main() -> None:
                         attempt, max_retries, exc)
             if attempt < max_retries:
                 log.info("bot.retry_in=%ds", retry_delay)
-                await asyncio.sleep(retry_delay)
-                retry_delay = min(retry_delay * 2, 60)  # exponential backoff, cap 60s
+                await asyncio.sleep(retry_delay)  
+                retry_delay = min(retry_delay * 2, 60)
             else:
                 log.error("bot.failed_all_attempts — giving up")
+
+            
 
 
 if __name__ == "__main__":

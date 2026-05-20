@@ -1,0 +1,91 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+html { scroll-behavior: smooth; }
+body { background: #0a0f1e; color: #e2e8f0; overflow-x: hidden; }
+::-webkit-scrollbar { width: 3px; }
+::-webkit-scrollbar-track { background: #0a0f1e; }
+::-webkit-scrollbar-thumb { background: rgba(0,212,255,0.2); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0,212,255,0.45); }
+.glass {
+  background: rgba(255,255,255,0.04);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(0,212,255,0.1);
+}
+.glass-gold { border-color: rgba(245,158,11,0.15); }
+.glass-hover { transition: border-color 0.25s, background 0.25s; }
+.glass-hover:hover { border-color: rgba(0,212,255,0.3); background: rgba(255,255,255,0.06); }
+.gradient-text {
+  background: linear-gradient(90deg, #00d4ff 0%, #f59e0b 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+@keyframes sweep { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+@keyframes logo-pulse { 0%,100%{opacity:.22} 50%{opacity:.85} }
+@keyframes fade-up { from{opacity:0;transform:translateY(18px)} to{opacity:1;transform:translateY(0)} }
+@keyframes scroll-hint { 0%,100%{opacity:0;transform:translateY(-4px)} 50%{opacity:1;transform:translateY(0)} }
+.animate-fade-up { animation: fade-up 0.7s ease-out forwards; }
+.animate-scroll-hint { animation: scroll-hint 2s ease-in-out infinite; }
+.code-key { color: #00d4ff; }
+.code-str { color: #f59e0b; }
+.code-num { color: #84cc16; }
+.code-cm  { color: #3a5a70; }
+.code-kw  { color: #c084fc; }
+.tab-active { border-bottom: 1px solid #00d4ff; color: #00d4ff; background: rgba(0,212,255,0.05); }
+.tab-idle   { color: #4a7090; }
+.tab-idle:hover { color: #94a3b8; }
+
+/* ── Text effects (no JS) ─────────────────────────────────────── */
+
+/* D — Hero headline: one-time shimmer sweep on page load */
+@keyframes shimmer-sweep {
+  0%   { background-position: -300% center; }
+  100% { background-position: 300% center; }
+}
+.hero-shimmer {
+  background: linear-gradient(
+    90deg,
+    #e2e8f0 0%, #e2e8f0 30%,
+    #00d4ff 50%,
+    #e2e8f0 70%, #e2e8f0 100%
+  );
+  background-size: 300% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: shimmer-sweep 1.8s ease-out 0.5s both;
+}
+/* The "Into" part stays cyan */
+.hero-accent {
+  color: #00d4ff;
+}
+
+/* A — Section heading: cyan glow on hover */
+.heading-glow {
+  transition: text-shadow 0.25s ease;
+  cursor: default;
+}
+.heading-glow:hover {
+  text-shadow:
+    0 0 20px rgba(0,212,255,0.5),
+    0 0 40px rgba(0,212,255,0.2);
+}
+
+/* C — Links, buttons, nav items: smooth color lift */
+.link-lift {
+  transition: color 0.15s ease, opacity 0.15s ease;
+}
+.link-lift:hover { color: #ffffff !important; }
+
+/* Clickable card glow border on hover */
+.card-hover {
+  transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+.card-hover:hover {
+  border-color: rgba(0,212,255,0.35) !important;
+  box-shadow: 0 0 24px rgba(0,212,255,0.08);
+  transform: translateY(-2px);
+}
+.card-hover:active { transform: translateY(0); }

@@ -106,30 +106,55 @@ async def get_api_key(
     redis_key = f"rate:{tier}:{identifier}"
     limit = RATE_LIMITS.get(tier, RATE_LIMITS["anonymous"])
 
+    PER_MIN: dict[str, int] = {"anonymous": 2, "free": 15, "pro": 60}
+    per_min_limit = PER_MIN.get(tier, 2)
+
     redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
     try:
+        # ── Per-minute window ──────────────────────────────────────────────
+        min_key = f"ratemin:{tier}:{identifier}"
+        min_count = await redis_client.incr(min_key)
+        if min_count == 1:
+            await redis_client.expire(min_key, 60)
+        if min_count > per_min_limit:
+            ttl = await redis_client.ttl(min_key)
+            raise HTTPException(
+                status_code=429,
+                detail=f"Per-minute rate limit exceeded: {per_min_limit} requests/min for {tier} tier. Retry after {max(int(ttl),0)}s.",
+                headers={"Retry-After": str(max(int(ttl), 0))},
+            )
+        # ── Per-hour window ────────────────────────────────────────────────
         count = await redis_client.incr(redis_key)
         if count == 1:
-            # First hit in this window — arm the 1-hour TTL
             await redis_client.expire(redis_key, 3600)
-
         if count > limit:
             ttl = await redis_client.ttl(redis_key)
             retry_after = max(int(ttl), 0)
-            log.warning(
-                "auth.rate_limited tier=%s identifier=%s count=%d limit=%d ttl=%d",
-                tier, identifier, count, limit, retry_after,
-            )
+            log.warning("auth.rate_limited tier=%s identifier=%s count=%d limit=%d", tier, identifier, count, limit)
             raise HTTPException(
                 status_code=429,
-                detail=(
-                    f"Rate limit exceeded: {limit} requests/hour for {tier} tier. "
-                    f"Upgrade at privascan.xyz or retry after {retry_after}s."
-                ),
+                detail=f"Rate limit exceeded: {limit} requests/hour for {tier} tier. Retry after {retry_after}s.",
                 headers={"Retry-After": str(retry_after)},
             )
     finally:
         await redis_client.aclose()
+
+    # ── Track usage in Redis (non-blocking best-effort) ──────────────────────
+    if key_hash:
+        from datetime import datetime, timezone
+        try:
+            _now = datetime.now(timezone.utc)
+            _today = _now.strftime('%Y%m%d')
+            _usage_prefix = f"usage:{identifier}"
+            _track_client = aioredis.from_url(settings.redis_url, decode_responses=True)
+            try:
+                await _track_client.incr(f"{_usage_prefix}:total")
+                await _track_client.incr(f"{_usage_prefix}:d:{_today}")
+                await _track_client.expire(f"{_usage_prefix}:d:{_today}", 86400 * 8)
+            finally:
+                await _track_client.aclose()
+        except Exception:
+            pass
 
     log.debug(
         "auth.ok tier=%s identifier=%s count=%d/%d",

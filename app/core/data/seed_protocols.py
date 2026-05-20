@@ -469,6 +469,7 @@ PROTOCOLS = [
             # NOTE: AnchorStateRegistry + L2OutputOracle are 0x000...000 (zero addr) — skipped
         ],
     },
+    
     # ──────────────────────────────────────────────────────────────────────────
     # 14. IEXEC
     # Source: iex.ec/developers/quick-reference-guide-to-iexec-protocol-addresses
@@ -506,14 +507,6 @@ PROTOCOLS = [
             {"address": "0x8ef2ec3ef9535d4b4349bfec7d8b31a580e60244", "chain": "arbitrum",  "role": "other",   "label": "Default Workerpool ARB",          "is_primary": False},
         ],
     },
-
-    # ──────────────────────────────────────────────────────────────────────────
-    # 14. IEXEC
-    # Source: iex.ec/developers/quick-reference-guide-to-iexec-protocol-addresses
-    # Chains: ethereum, arbitrum
-    # Testnets (Arbitrum Sepolia) excluded
-    # Audits: ChainSecurity, Consensys Diligence, Halborn
-    # ──────────────────────────────────────────────────────────────────────────
 
 ]
 

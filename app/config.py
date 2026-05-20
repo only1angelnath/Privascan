@@ -43,7 +43,7 @@ class Settings(BaseSettings):
 
     # Rate limits (requests/hour)
     rate_limit_anonymous: int = 10
-    rate_limit_free: int = 100
+    rate_limit_free: int = 500
     rate_limit_pro: int = 1000
 
     @property

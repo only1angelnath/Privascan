@@ -239,6 +239,7 @@ def score_ecosystem(self, protocol_id: str, scan_type: str = "curated"):
 
         # Compute composite score
         from app.core.scoring.aggregator import aggregate
+        from app.core.scoring.audit_analyser import analyse_audit
         audit_score      = analyse_audit(protocol_id=protocol_id)
         compliance_score = 0.0
         governance_score = 50.0

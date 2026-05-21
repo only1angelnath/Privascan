@@ -10,7 +10,7 @@ const YAxis       = dynamic(() => import('recharts').then(m => ({ default: m.YAx
 const Tooltip     = dynamic(() => import('recharts').then(m => ({ default: m.Tooltip })),     { ssr: false })
 const ResponsiveContainer = dynamic(() => import('recharts').then(m => ({ default: m.ResponsiveContainer })), { ssr: false })
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
+const API = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000') + '/api/v1'
 
 interface UsageData {
   key_prefix: string

@@ -1,4 +1,4 @@
-const B = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
+const B = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000') + '/api/v1'
 export interface SubScores { code:number; ownership:number; liquidity:number; audit:number; compliance:number; governance:number }
 export interface Finding { check:string; impact:string; confidence:string; description:string; is_custom:boolean }
 export interface ScoreResult {

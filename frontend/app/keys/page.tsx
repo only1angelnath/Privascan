@@ -2,7 +2,7 @@
 import { useState, FormEvent } from 'react'
 import Link from 'next/link'
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
+const API = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000') + '/api/v1'
 
 export default function KeysPage() {
   const [step, setStep]         = useState<1|2|3|4>(1)

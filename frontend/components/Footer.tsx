@@ -3,7 +3,7 @@ import Logo from './Logo'
 
 const COLS = {
   Product: [
-    { l: 'Score a Contract', h: '/score/ethereum/0x910Cbd523D972eb0a6f4cAe4618aD62622b39DbF' },
+    { l: 'Score a Contract', h: '/' },
     { l: 'Protocol Directory', h: '/protocols' },
     { l: 'Request Protocol',  h: '/request'    },
     { l: 'Get API Key',       h: '/keys'        },

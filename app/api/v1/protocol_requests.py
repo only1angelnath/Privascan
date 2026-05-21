@@ -56,7 +56,8 @@ async def submit_protocol_request(body: ProtocolRequestBody):
         await redis_client.lpush("privascan:protocol_requests", json.dumps(record))
 
         # Get admin chat ID
-        admin_chat_id = await redis_client.get("privascan:admin_chat_id")
+        admin_chat_id_raw = await redis_client.get("privascan:admin_chat_id")
+        admin_chat_id = admin_chat_id_raw.decode() if isinstance(admin_chat_id_raw, bytes) else admin_chat_id_raw
     finally:
         await redis_client.aclose()
 

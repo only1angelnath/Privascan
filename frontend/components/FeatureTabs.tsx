@@ -109,7 +109,7 @@ function ApiPreview() {
 }
 
 const TABS = [
-  { id: 'scan',      label: 'Score Any Contract', icon: '⧡', tagline: 'Any EVM address. Any chain. Full risk report in under 60 seconds.', desc: 'Paste a contract address, select a chain, and PrivaScan runs Slither static analysis, checks OFAC lists, queries TVL, and parses audit coverage. No signup required.', cta: { label: 'Open full scanner →', href: '/score/ethereum/0x910Cbd523D972eb0a6f4cAe4618aD62622b39DbF' }, Preview: ScanPreview },
+  { id: 'scan',      label: 'Score Any Contract', icon: '⧡', tagline: 'Any EVM address. Any chain. Full risk report in under 60 seconds.', desc: 'Paste a contract address, select a chain, and PrivaScan runs Slither static analysis, checks OFAC lists, queries TVL, and parses audit coverage. No signup required.', cta: null, Preview: ScanPreview },
   { id: 'directory', label: 'Protocol Directory', icon: '⊞', tagline: '14 curated privacy protocols. Scored independently from community scans.', desc: 'These protocols are manually vetted, have verified source code, and are rescored automatically every 6 hours. Different from community scans — these are the gold standard.', cta: { label: 'Browse directory →', href: '/protocols' }, Preview: DirectoryPreview },
   { id: 'bot',       label: 'Telegram Alerts',   icon: '✉', tagline: 'Score contracts and get grade-change alerts without opening a browser.', desc: 'Add any contract to your watchlist via @PrivaScanBot. Set a score threshold. Get a Telegram message the moment the risk grade changes.', cta: { label: 'Open @PrivaScanBot →', href: 'https://t.me/PrivaScanBot' }, Preview: BotPreview },
   { id: 'api',       label: 'REST API',           icon: '</>', tagline: 'Integrate risk scores directly into your product or research workflow.', desc: 'Clean JSON API. Free access at 500 req/hr with a free key. No SDK required — a single curl command gets you a full risk report.', cta: { label: 'Get API key →', href: '/keys' }, Preview: ApiPreview },
@@ -150,10 +150,10 @@ export default function FeatureTabs() {
             <p className="font-orbitron text-lg font-bold text-white mb-3">{tab.tagline}</p>
             <p className="font-mono text-sm text-slate-400 leading-relaxed">{tab.desc}</p>
           </div>
-          <Link href={tab.cta.href}
+          {tab.cta && <Link href={tab.cta.href}
             className="inline-flex items-center gap-2 mt-8 font-orbitron text-xs font-bold px-5 py-3 rounded-lg transition-all cursor-pointer hover:opacity-90 active:scale-95 self-start"
             style={{ background: '#00d4ff', color: '#0a0f1e' }}>
-            {tab.cta.label}
+            {tab.cta.label}}</Link>}
           </Link>
         </div>
         <div className="border-l" style={{ borderColor: 'rgba(255,255,255,0.07)', background: 'rgba(0,0,0,0.2)' }}>

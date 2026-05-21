@@ -1,11 +1,15 @@
+import os
 from celery import Celery
 from celery.schedules import crontab
 from app.config import settings
 
+broker_url = settings.celery_broker_url or os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+backend_url = settings.celery_result_backend or os.environ.get("CELERY_RESULT_BACKEND", broker_url)
+
 celery_app = Celery(
     "privascan",
-    broker=settings.celery_broker_url,
-    backend=settings.celery_result_backend,
+    broker=broker_url,
+    backend=backend_url,
     include=["app.workers.tasks"],
 )
 

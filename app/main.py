@@ -16,15 +16,15 @@ async def lifespan(app: FastAPI):
     # Trigger curated protocol rescores on startup (non-blocking)
     try:
         from app.workers.tasks import score_ecosystem
-        from app.db.database import AsyncSessionLocal
-        from app.db import models
+        from app.db.session import AsyncSessionLocal
+        from app.db.models import Protocol
         from sqlalchemy import select
         import asyncio
 
         async def _trigger_startup_scans():
             await asyncio.sleep(10)  # wait for DB to be ready
             async with AsyncSessionLocal() as db:
-                result = await db.execute(select(models.Protocol))
+                result = await db.execute(select(Protocol))
                 protocols = result.scalars().all()
                 for protocol in protocols:
                     score_ecosystem.delay(str(protocol.id))

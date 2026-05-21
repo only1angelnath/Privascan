@@ -26,7 +26,7 @@ class Settings(BaseSettings):
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"
-    celery_broker_url: str = "redis://localhost:6379/0"
+    celery_broker_url: str = ""
     celery_result_backend: str = "redis://localhost:6379/1"
 
     # External APIs

@@ -1,7 +1,19 @@
 import Link from 'next/link'
 import GradeBadge from '@/components/GradeBadge'
 import { getProtocol } from '@/lib/api'
-const CHAIN:Record<number,string>={1:'Ethereum',10:'Optimism',56:'BNB Chain',137:'Polygon',42161:'Arbitrum',8453:'Base',43114:'Avalanche'}
+const CHAIN:Record<number,string>={1:'Ethereum',10:'Optimism',56:'BNB Smart Chain',137:'Polygon',42161:'Arbitrum',8453:'Base',43114:'Avalanche'}
+const CHAIN_SLUG:Record<number,string>={1:'ethereum',10:'optimism',56:'bsc',137:'polygon',42161:'arbitrum',8453:'base',43114:'avalanche'}
+const API = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000') + '/api/v1'
+
+async function getContractScore(chain_id:number, address:string) {
+  try {
+    const slug = CHAIN_SLUG[chain_id] || 'ethereum'
+    const r = await fetch(`${API}/score/${slug}/${address}`, { next: { revalidate: 300 } })
+    if (!r.ok) return null
+    return await r.json()
+  } catch { return null }
+}
+
 export default async function ProtocolPage({params}:{params:{slug:string}}){
   let proto:any=null
   try{ proto=await getProtocol(params.slug) }catch{}
@@ -12,6 +24,16 @@ export default async function ProtocolPage({params}:{params:{slug:string}}){
     </div>
   )
   const ls=proto.latest_score
+
+  // Fetch scores for all contracts in parallel
+  const contractScores: Record<string, any> = {}
+  await Promise.all(
+    (proto.contracts || []).map(async (c: any) => {
+      const score = await getContractScore(c.chain_id, c.address)
+      if (score) contractScores[c.address] = score
+    })
+  )
+
   return(
     <div className="max-w-7xl mx-auto px-6 pt-28 pb-16">
       <Link href="/protocols" className="font-mono text-xs text-slate-500 hover:text-slate-300 transition-colors inline-flex items-center gap-2 mb-8">
@@ -45,7 +67,7 @@ export default async function ProtocolPage({params}:{params:{slug:string}}){
             <span>ADDRESS</span><span>CHAIN</span><span>ROLE</span><span>SCORE</span>
           </div>
           {(proto.contracts||[]).map((c:any)=>(
-            <Link key={c.address} href={`/score/${CHAIN[c.chain_id]?.toLowerCase()||'ethereum'}/${c.address}`}
+            <Link key={c.address} href={`/score/${CHAIN_SLUG[c.chain_id]||'ethereum'}/${c.address}`}
               className="grid items-center px-6 py-3 hover:bg-white/[0.03] transition-colors border-b"
               style={{gridTemplateColumns:'3fr 1fr 1fr 1fr',borderColor:'rgba(255,255,255,0.05)'}}>
               <div>
@@ -54,7 +76,10 @@ export default async function ProtocolPage({params}:{params:{slug:string}}){
               </div>
               <div className="font-mono text-xs text-slate-400">{CHAIN[c.chain_id]||c.chain_id}</div>
               <div className="font-mono text-xs text-slate-400">{c.role}</div>
-              <div className="font-mono text-xs" style={{color:'#00d4ff'}}>→ scan</div>
+              <div>{contractScores[c.address]
+                ? <GradeBadge grade={contractScores[c.address].grade} />
+                : <span className="font-mono text-xs" style={{color:'#00d4ff'}}>→ scan</span>
+              }</div>
             </Link>
           ))}
         </div>

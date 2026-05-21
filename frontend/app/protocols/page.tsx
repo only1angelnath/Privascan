@@ -1,10 +1,17 @@
 import Link from 'next/link'
 import GradeBadge from '@/components/GradeBadge'
-import { getProtocols } from '@/lib/api'
+import { getProtocols, getProtocol } from '@/lib/api'
 export const dynamic='force-dynamic'
 export default async function ProtocolsPage(){
   let protocols:any[]=[]
-  try{ const d=await getProtocols(); protocols=d.protocols||[] }catch{}
+  try{
+    const d=await getProtocols()
+    const base=d.protocols||[]
+    protocols=await Promise.all(base.map(async(p:any)=>{
+      try{ const full=await getProtocol(p.slug); return{...p,latest_score:full.latest_score} }
+      catch{ return p }
+    }))
+  }catch{}
   return(
     <div className="max-w-7xl mx-auto px-6 pt-28 pb-16">
       <div className="mb-12">

@@ -25,5 +25,5 @@ export default function CipherText({ text, className = '', style, as: Tag = 'spa
       if (f++ >= F + text.length) { clearInterval(id); el.textContent = text; live.current = false }
     }, 22)
   }, [text])
-  return <Tag ref={ref as any} className={className} style={style} onMouseEnter={play}>{text}</Tag>
+  return <Tag ref={ref as React.Ref<HTMLElement>} className={className} style={style} onMouseEnter={play}>{text}</Tag>
 }

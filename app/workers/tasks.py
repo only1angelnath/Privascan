@@ -237,6 +237,46 @@ def score_ecosystem(self, protocol_id: str, scan_type: str = "curated"):
         ownership_score = primary_result["ownership"]["score"] if primary_result else 50.0
         liquidity_score = primary_result["liquidity"]["score"] if primary_result else 75.0
 
+        # Compute composite score
+        from app.core.scoring.aggregator import aggregate
+        audit_score      = analyse_audit(protocol_id=protocol_id)
+        compliance_score = 0.0
+        governance_score = 50.0
+        agg = aggregate(
+            code_score=aggregated_code_score,
+            ownership_score=ownership_score,
+            liquidity_score=liquidity_score,
+            audit_score=audit_score,
+            compliance_score=compliance_score,
+            governance_score=governance_score,
+        )
+        composite = agg["composite_score"]
+        grade     = agg["grade"]
+
+        # Save ScoreReport to DB
+        from app.db.session import get_sync_session
+        from app.db.models import ScoreReport
+        import uuid
+        with get_sync_session() as db:
+            report = ScoreReport(
+                id=str(uuid.uuid4()),
+                protocol_id=protocol_id,
+                composite_score=round(composite, 2),
+                grade=grade,
+                code_risk_score=round(aggregated_code_score, 2),
+                ownership_score=round(ownership_score, 2),
+                liquidity_score=round(liquidity_score, 2),
+                audit_score=round(audit_score, 2),
+                compliance_score=round(compliance_score, 2),
+                governance_score=round(governance_score, 2),
+                override_applied=False,
+                score_version="1.0",
+            )
+            db.add(report)
+            db.commit()
+            log.info("task.score_ecosystem.saved",
+                     protocol=protocol.name, grade=grade, composite=composite)
+
         return {
             "protocol_id": protocol_id,
             "protocol_name": protocol.name,
@@ -245,6 +285,8 @@ def score_ecosystem(self, protocol_id: str, scan_type: str = "curated"):
             "aggregated_code_score": round(aggregated_code_score, 2),
             "ownership_score": ownership_score,
             "liquidity_score": liquidity_score,
+            "composite_score": round(composite, 2),
+            "grade": grade,
             "contract_details": contract_results,
         }
     except Exception as exc:

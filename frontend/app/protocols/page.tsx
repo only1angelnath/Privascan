@@ -8,7 +8,7 @@ export default async function ProtocolsPage(){
     const d=await getProtocols()
     const base=d.protocols||[]
     protocols=await Promise.all(base.map(async(p:any)=>{
-      try{ const full=await getProtocol(p.slug); return{...p,latest_score:full.latest_score} }
+      try{ const full=await getProtocol(p.slug); return{...p,latest_score:full.latest_score,contract_count:full.contracts?.length||0} }
       catch{ return p }
     }))
   }catch{}

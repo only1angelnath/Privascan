@@ -6,14 +6,31 @@ import FAQ from '@/components/FAQ'
 const ParticleCanvas = dynamic(() => import('@/components/ParticleCanvas'), { ssr: false })
 const FeatureTabs    = dynamic(() => import('@/components/FeatureTabs'),    { ssr: false })
 
-const SPOTLIGHT = [
-  { name: 'Railgun',       chain: 'Ethereum', grade: 'B', score: 74, color: '#84cc16', slug: 'railgun',       contracts: 12, desc: 'ZK shielded balances for private DeFi. Most active privacy pool on mainnet.' },
-  { name: 'Aztec',         chain: 'Ethereum', grade: 'A', score: 31, color: '#22c55e', slug: 'aztec',         contracts: 12, desc: 'ZK rollup with native account abstraction and private execution layer.' },
-  { name: 'Privacy Pools', chain: 'Ethereum', grade: 'B', score: 68, color: '#84cc16', slug: 'privacy-pools', contracts: 5,  desc: 'Association set proofs for regulatory-compliant privacy. Vitalik-endorsed.' },
+const SPOTLIGHT_BASE = [
+  { name: 'Railgun',       chain: 'Ethereum', color: '#84cc16', slug: 'railgun',       contracts: 12, desc: 'ZK shielded balances for private DeFi. Most active privacy pool on mainnet.' },
+  { name: 'Aztec',         chain: 'Ethereum', color: '#22c55e', slug: 'aztec',         contracts: 12, desc: 'ZK rollup with native account abstraction and private execution layer.' },
+  { name: 'Privacy Pools', chain: 'Ethereum', color: '#84cc16', slug: 'privacy-pools', contracts: 5,  desc: 'Association set proofs for regulatory-compliant privacy. Vitalik-endorsed.' },
 ]
 
+const API = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000') + '/api/v1'
 
-export default function HomePage() {
+async function getSpotlight() {
+  return Promise.all(
+    SPOTLIGHT_BASE.map(async (item) => {
+      try {
+        const r = await fetch(`${API}/protocols/${item.slug}`, { next: { revalidate: 300 } })
+        const d = await r.json()
+        const s = d.latest_score
+        return { ...item, grade: s?.grade ?? null, score: s?.composite_score ?? null }
+      } catch {
+        return { ...item, grade: null, score: null }
+      }
+    })
+  )
+}
+
+export default async function HomePage() {
+  const SPOTLIGHT = await getSpotlight()
   return (
     <>
       {/* HERO */}

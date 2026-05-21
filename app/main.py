@@ -13,6 +13,26 @@ log = structlog.get_logger()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     log.info("privascan.startup", env=settings.app_env)
+    # Trigger curated protocol rescores on startup (non-blocking)
+    try:
+        from app.workers.tasks import score_ecosystem
+        from app.db.database import AsyncSessionLocal
+        from app.db import models
+        from sqlalchemy import select
+        import asyncio
+
+        async def _trigger_startup_scans():
+            await asyncio.sleep(10)  # wait for DB to be ready
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(select(models.Protocol))
+                protocols = result.scalars().all()
+                for protocol in protocols:
+                    score_ecosystem.delay(str(protocol.id))
+                log.info("privascan.startup_scans_queued", count=len(protocols))
+
+        asyncio.create_task(_trigger_startup_scans())
+    except Exception as exc:
+        log.warning("privascan.startup_scans_failed", error=str(exc))
     yield
     log.info("privascan.shutdown")
 

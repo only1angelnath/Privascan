@@ -267,7 +267,7 @@ export default function ApiDocsPage() {
           <div className="glass rounded-xl p-5" style={{ borderColor: 'rgba(0,212,255,0.2)' }}>
             <div className="font-mono text-xs text-slate-500 mb-1">Base URL</div>
             <div className="font-mono text-lg font-bold" style={{ color: '#00d4ff' }}>
-              http://localhost:8000/api/v1
+              https://api-production-c35ab.up.railway.app/api/v1
             </div>
             <div className="font-mono text-xs text-slate-500 mt-2">
               JSON responses only &middot; CORS enabled &middot; No SDK required
@@ -286,11 +286,11 @@ export default function ApiDocsPage() {
             .
           </p>
           <Code title="authenticated">
-{`curl http://localhost:8000/api/v1/score/ethereum/0x910Cbd... \
+{`curl https://api-production-c35ab.up.railway.app/api/v1/score/ethereum/0x910Cbd... \
   -H "X-API-Key: ps_your_key_here"`}
           </Code>
           <Code title="no key (10 req/hr)">
-{`curl http://localhost:8000/api/v1/score/ethereum/0x910Cbd...`}
+{`curl https://api-production-c35ab.up.railway.app/api/v1/score/ethereum/0x910Cbd...`}
           </Code>
         </Section>
 
@@ -423,7 +423,7 @@ export default function ApiDocsPage() {
               desc="Contract address. 0x-prefixed EVM address, 42 characters. Lowercased automatically." />
           </div>
           <Code title="request">
-{`curl http://localhost:8000/api/v1/score/ethereum/0x910Cbd523D972eb0a6f4cAe4618aD62622b39DbF \
+{`curl https://api-production-c35ab.up.railway.app/api/v1/score/ethereum/0x910Cbd523D972eb0a6f4cAe4618aD62622b39DbF \
   -H "X-API-Key: ps_your_key_here"`}
           </Code>
           <Code title="200 response">

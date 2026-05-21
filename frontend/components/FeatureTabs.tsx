@@ -153,8 +153,8 @@ export default function FeatureTabs() {
           {tab.cta && <Link href={tab.cta.href}
             className="inline-flex items-center gap-2 mt-8 font-orbitron text-xs font-bold px-5 py-3 rounded-lg transition-all cursor-pointer hover:opacity-90 active:scale-95 self-start"
             style={{ background: '#00d4ff', color: '#0a0f1e' }}>
-            {tab.cta.label}}</Link>}
-          </Link>
+            {tab.cta.label}
+          </Link>}
         </div>
         <div className="border-l" style={{ borderColor: 'rgba(255,255,255,0.07)', background: 'rgba(0,0,0,0.2)' }}>
           <Preview />

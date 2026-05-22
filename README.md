@@ -2,7 +2,7 @@
 
 **Open-source deterministic risk scoring API for EVM privacy protocols.**
 
-privascan.xyz · api.privascan.xyz · [@PrivaScanBot](https://t.me/PrivaScanBot)
+privascan.xyz · api-production-c35ab.up.railway.app · [@PrivaScanBot](https://t.me/PrivaScanBot)
 
 ---
 
@@ -13,10 +13,10 @@ PrivaScan scores entire EVM privacy protocol ecosystems — not just token contr
 | Dimension | Weight | What it measures |
 |---|---|---|
 | Code Risk | 30% | Slither static analysis + 5 custom privacy detectors |
-| Ownership | 20% | Admin key centralisation, proxy upgradeability, timelock |
+| Ownership | 25% | Admin key centralisation, proxy upgradeability, timelock |
 | Liquidity | 20% | TVL size, concentration, source confidence |
-| Audit | 15% | Auditor tier, recency, critical finding resolution |
-| Compliance | 10% | OFAC SDN list, DeFiHackLabs exploit history |
+| Audit | 12% | Auditor tier, recency, critical finding resolution |
+| Compliance | 8% | OFAC SDN list, DeFiHackLabs exploit history |
 | Governance | 5% | On-chain governance presence |
 
 Scores are fully explainable and reproducible. No model weights — every point traces to a verifiable data point.
@@ -27,19 +27,19 @@ Scores are fully explainable and reproducible. No model weights — every point 
 
 | Grade | Score Range | Risk Level |
 |---|---|---|
-| A | 0–20 | Low Risk |
-| B | 21–40 | Moderate-Low |
-| C | 41–60 | Moderate Risk |
-| D | 61–80 | High Risk |
-| F | 81–100 | Critical Risk |
+| A | 0-20 | Low Risk |
+| B | 21-40 | Moderate-Low |
+| C | 41-60 | Moderate Risk |
+| D | 61-80 | High Risk |
+| F | 81-100 | Critical Risk |
 
-Hard overrides apply for OFAC-sanctioned and actively exploited protocols. Override states are resolvable — when an exploit is remediated or a sanction lifted, the protocol re-enters normal scoring with the resolution permanently logged.
+Hard overrides apply for OFAC-sanctioned and actively exploited protocols. Override states are resolvable.
 
 ---
 
 ## API
 
-Base URL: `https://api.privascan.xyz/api/v1`
+Base URL: `https://api-production-c35ab.up.railway.app/api/v1`
 
 ### Score a contract
 
@@ -48,7 +48,7 @@ GET /score/{chain}/{address}
 ```
 
 ```bash
-curl https://api.privascan.xyz/api/v1/score/ethereum/0x910Cbd523D972eb0a6f4cAe4618aD62622b39DbF
+curl https://api-production-c35ab.up.railway.app/api/v1/score/ethereum/0x910Cbd523D972eb0a6f4cAe4618aD62622b39DbF
 ```
 
 ### List curated protocols
@@ -72,7 +72,7 @@ POST /keys/generate
 ### Check usage
 
 ```bash
-GET /keys/usage?key=YOUR_KEY
+GET /keys/usage
 ```
 
 Supported chains: `ethereum`, `arbitrum`, `optimism`, `base`, `polygon`, `bsc`, `avalanche`
@@ -96,7 +96,7 @@ Get a free API key at [privascan.xyz/keys](https://privascan.xyz/keys) — verif
 |---|---|
 | `/score ethereum 0x...` | Score any EVM contract |
 | `/protocol tornado-cash` | Get protocol summary |
-| `/watch ethereum 0x... 60` | Alert when score exceeds threshold |
+| `/watch ethereum 0x... 60` | Alert when score changes by threshold |
 | `/unwatch 0x...` | Remove from watchlist |
 | `/mylist` | View your watchlist |
 | `/verify` | Generate API key verification code |
@@ -178,13 +178,32 @@ Register the Telegram bot admin:
 ---
 
 ## Architecture
-Request → FastAPI (async)
-→ Redis cache check → return if fresh
-→ ThreadPoolExecutor → Slither (CPU-bound)
-→ async I/O → Etherscan + Alchemy + DefiLlama + Dune
-→ 6 sub-score analysers → aggregator → override engine
-→ store in Postgres + Redis → return scored report
+
+```
+Request -> FastAPI (async)
+-> Redis cache check -> return if fresh
+-> ThreadPoolExecutor -> Slither (CPU-bound)
+-> async I/O -> Etherscan + Alchemy + DefiLlama + Dune SIM
+-> 6 sub-score analysers -> aggregator -> override engine
+-> store in Postgres + Redis -> return scored report
+```
+
 Celery beat rescores all 14 curated protocols every 6 hours. Score changes > 10 points or new hard flags trigger Telegram alerts to all watchlist subscribers.
+
+---
+
+## Scoring Model
+
+```
+composite = 0.30 x code_risk
+          + 0.25 x ownership
+          + 0.20 x liquidity
+          + 0.12 x audit
+          + 0.08 x compliance
+          + 0.05 x governance
+```
+
+**Audit sub-score** uses a weighted-average model with diminishing returns. Best-tier auditor scores first; each subsequent audit contributes at 40% weight of the previous. Tier 1 auditors (Trail of Bits, OpenZeppelin, Consensys Diligence) target a score of 15. Tier 2 (Halborn, Quantstamp, PeckShield) target 30. Tier 3 targets 50. Audits older than 24 months are treated as half as effective.
 
 ---
 
@@ -198,7 +217,7 @@ Celery beat rescores all 14 curated protocols every 6 hours. Score changes > 10 
 
 ## License
 
-MIT — see [LICENSE](LICENSE)
+MIT -- see [LICENSE](LICENSE)
 
 Not financial advice. Scores are informational only.
 

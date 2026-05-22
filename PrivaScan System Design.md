@@ -361,7 +361,9 @@ async def get_ecosystem_tvl_dune(pool_addresses: list[str], chain_id: int) -> fl
     return total
 ```
 
-**Cache TTL for Dune-sourced TVL:** 48 hours (extended from 24h default — Dune data is directly on-chain priced, warranting a longer freshness window while conserving Compute Units).
+**Cache TTL for Dune-sourced TVL:** 48 hours
+
+**Note (Day 16):** `DuneSimClient` overrides `_get_client()` to always return a fresh `httpx.AsyncClient` instead of caching a singleton. This prevents `Event loop is closed` errors when Celery workers call `asyncio.run()` repeatedly across tasks. (extended from 24h default — Dune data is directly on-chain priced, warranting a longer freshness window while conserving Compute Units).
 
 **TVL confidence when Dune is source:** `"tvl_confidence": "medium"` (accurate but protocol-level aggregation not as comprehensive as DefiLlama's adapter).
 
@@ -444,20 +446,20 @@ Hard override on match. Resolution pathway documented in Section 11.
 **Type:** Internal Postgres `audit_records`, manually seeded, open for community contribution.
 **Scope:** Audits of the full contract ecosystem (pool audits, verifier audits, governance audits) — not just token audits.
 
-**Audit scoring formula:**
+**Audit scoring formula (Day 15 weighted model):**
 ```
-audit_base      = min(100, num_audits × 20)
-auditor_bonus   = mean(tier_score)
-                  tier 1 (Trail of Bits, OpenZeppelin, Certora) = 30pts
-                  tier 2 (Halborn, Sigma Prime, Nethermind)     = 20pts
-                  tier 3 (others)                               = 10pts
-recency_factor  = 1.0 if most_recent_audit ≤ 12 months else 0.7
-fv_bonus        = 15 if formally verified else 0
-crit_penalty    = unresolved_critical_count × 25
-
-audit_score = min(100, max(0,
-    (audit_base + auditor_bonus + fv_bonus) × recency_factor − crit_penalty
-))
+No audits                  -> 80.0 (max risk)
+Audits blended via weighted average (best tier first):
+  Each subsequent audit contributes at 40% weight of previous.
+  Tier 1 (ToB, OZ, Consensys, Halborn)    -> target 15 (low risk)
+  Tier 2 (Quantstamp, PeckShield, CertiK) -> target 30
+  Tier 3 (others)                         -> target 50
+  Stale audit (>24 months)                -> halfway between tier target and 80
+Modifiers:
+  Formal verification                     -> -10
+  Unresolved critical                     -> +25 each
+  Unresolved high                         -> +10 each
+  All criticals resolved                  -> -5
 ```
 
 ---
@@ -568,11 +570,11 @@ composite = 0.30×code + 0.25×ownership + 0.20×liquidity
 The colour system is consistent across the web dashboard, Telegram alerts, and all API badge outputs. Every grade has a primary colour, a background tint, and an icon.
 
 ```
-Grade A  [85–100]   Colour: #22c55e  (Emerald Green)    Icon: ✅  "Low Risk"
-Grade B  [70–84]    Colour: #84cc16  (Lime Green)        Icon: 🟢  "Moderate-Low Risk"
-Grade C  [55–69]    Colour: #f59e0b  (Amber)             Icon: 🟡  "Moderate Risk"
-Grade D  [40–54]    Colour: #f97316  (Orange)            Icon: 🟠  "High Risk"
-Grade F  [0–39]     Colour: #ef4444  (Red)               Icon: 🔴  "Critical Risk"
+Grade A  [0–20]     Colour: #22c55e  (Emerald Green)    Icon: ✅  "Low Risk"
+Grade B  [21–40]    Colour: #84cc16  (Lime Green)        Icon: 🟢  "Moderate-Low Risk"
+Grade C  [41–60]    Colour: #f59e0b  (Amber)             Icon: 🟡  "Moderate Risk"
+Grade D  [61–80]    Colour: #f97316  (Orange)            Icon: 🟠  "High Risk"
+Grade F  [81–100]   Colour: #ef4444  (Red)               Icon: 🔴  "Critical Risk"
 
 Override states:
   OFAC sanctioned:    Colour: #7c3aed  (Purple)           Icon: ⛔  "Sanctioned"
@@ -1503,7 +1505,7 @@ defillama-sdk>=0.1.0
 
 ---
 
-*PrivaScan System Design v5.1 — Updated Day 9*
+*PrivaScan System Design v5.2 — Updated Day 16*
 *privascan.xyz · api.privascan.xyz · @PrivaScanBot*
-*V1: 14 EVM protocols · 197 contracts across 9 chains · Full ecosystem multi-contract scoring · Resolved override states · Visual design system*
+*V1: 14 EVM protocols · 197 contracts across 9 chains · Full ecosystem multi-contract scoring · Resolved override states · Visual design system · Day 16: Dune event loop fix, request form live*
 *V2: Non-EVM (Zcash, Monero) · ML sub-scores · Webhooks · Batch scoring · Additional EVM protocols*

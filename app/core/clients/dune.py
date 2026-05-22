@@ -21,6 +21,20 @@ class DuneSimClient(BaseClient):
             "X-Sim-Api-Key": settings.dune_api_key,   # correct header name
         }
 
+    async def _get_client(self):
+        # Always create a fresh client per call.
+        # Celery workers call asyncio.run() repeatedly, which destroys the
+        # event loop each time. A cached httpx.AsyncClient becomes stale
+        # after the first loop closes, causing 'Event loop is closed'.
+        import httpx
+        from app.core.clients.base import DEFAULT_TIMEOUT
+        return httpx.AsyncClient(
+            base_url=self.base_url,
+            timeout=DEFAULT_TIMEOUT,
+            headers=self._headers(),
+            follow_redirects=True,
+        )
+
     async def get_contract_balance_usd(
         self, address: str, chain_slug: str
     ) -> TvlResult:

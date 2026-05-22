@@ -95,9 +95,33 @@ def _run_pipeline_sync(address: str, chain_slug: str) -> dict:
                 )
             )
 
-        # ── 4. Liquidity (pure math — no I/O) ────────────────────────────────
+        # ── 4. Liquidity — prefer protocol-level TVL for curated contracts ──
+        import asyncio as _aio
+        from app.db.models import ProtocolContract as _PC
+        from app.db.session import get_sync_session as _gss
+
+        _protocol_tvl = None
+        try:
+            with _gss() as _db:
+                _pc_row = _db.query(_PC).filter(
+                    _PC.address == address.lower()
+                ).first()
+                _defillama_slug = _pc_row.protocol.defillama_slug if _pc_row and _pc_row.protocol else None
+            if _defillama_slug:
+                from app.core.clients.defillama import defillama_client as _dfl
+                _tvl_loop = _aio.new_event_loop()
+                try:
+                    _protocol_tvl = _tvl_loop.run_until_complete(
+                        _dfl.get_protocol_tvl(_defillama_slug)
+                    )
+                finally:
+                    _tvl_loop.close()
+        except Exception as _e:
+            log.warning("score.protocol_tvl_lookup failed: %s", _e)
+
+        tvl_input = _protocol_tvl if _protocol_tvl is not None else raw.tvl
         liquidity_result = analyse_liquidity(
-            tvl=raw.tvl,
+            tvl=tvl_input,
             address=address,
             chain_id=chain.chain_id,
         )

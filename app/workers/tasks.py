@@ -718,6 +718,130 @@ def _parse_defihacklabs_readme(markdown_text: str) -> list[dict]:
     return records
 
 
+def _fetch_defihacklabs_via_api() -> list[dict]:
+    """
+    Use GitHub API to list all year-month folders in src/test,
+    then fetch each .sol file and parse @KeyInfo blocks.
+    """
+    records = []
+    base_url = "https://api.github.com/repos/SunWeb3Sec/DeFiHackLabs/contents/src/test"
+    headers = {"Accept": "application/vnd.github.v3+json"}
+
+    try:
+        with httpx.Client(timeout=30, follow_redirects=True) as client:
+            # Get list of year-month directories
+            resp = client.get(base_url, headers=headers)
+            if resp.status_code != 200:
+                log.warning("defihacklabs.api_error status=%s", resp.status_code)
+                return []
+
+            dirs = [d for d in resp.json() if d.get("type") == "dir"]
+
+            for d in dirs:
+                year_month = d["name"]  # e.g. "2023-01"
+                dir_resp = client.get(d["url"], headers=headers)
+                if dir_resp.status_code != 200:
+                    continue
+
+                sol_files = [f for f in dir_resp.json()
+                             if f.get("name", "").endswith(".sol")]
+
+                for sol_file in sol_files:
+                    try:
+                        raw_url = sol_file["download_url"]
+                        if not raw_url:
+                            continue
+                        sol_resp = client.get(raw_url, timeout=15)
+                        if sol_resp.status_code != 200:
+                            continue
+                        record = _parse_sol_file(
+                            sol_resp.text,
+                            year_month,
+                            sol_file["name"]
+                        )
+                        if record:
+                            records.append(record)
+                    except Exception as exc:
+                        log.warning("defihacklabs.sol_parse_error file=%s error=%s",
+                                    sol_file.get("name"), str(exc))
+    except Exception as exc:
+        log.warning("defihacklabs.fetch_error error=%s", str(exc))
+
+    return records
+
+
+def _parse_sol_file(sol_text: str, year_month: str, filename: str) -> dict | None:
+    """Parse @KeyInfo block from a DeFiHackLabs .sol exploit file."""
+    # Protocol name from filename
+    protocol_name = re.sub(r"_exp.*", "", filename.replace(".sol", ""))
+    protocol_name = protocol_name.replace("_", " ").strip()
+    if not protocol_name:
+        return None
+
+    # Only parse if some loss info exists
+    if not re.search(r"Total [Ll]ost", sol_text):
+        return None
+
+    # Date from year_month directory
+    try:
+        parts = year_month.split("-")
+        exploit_date = datetime.strptime(f"{parts[0]}-{parts[1]}-01", "%Y-%m-%d").date()
+    except Exception:
+        exploit_date = None
+
+    # Loss amount — handle both formats:
+    # New: "// @KeyInfo - Total Lost : $1.2M"
+    # Old: "// Total lost: 144 BNB"
+    loss_usd = None
+    keyinfo = re.search(r"(?:@KeyInfo.*?Total Lost|Total lost).*?:(.+)", sol_text, re.IGNORECASE)
+    if keyinfo:
+        loss_text = keyinfo.group(1).strip()
+        eth_match = re.search(r"([\d.]+)\s*ETH", loss_text, re.IGNORECASE)
+        usd_match = re.search(r"\$?~?([\d,.]+)\s*([MmKkBb]?)", loss_text)
+        if eth_match:
+            try:
+                loss_usd = Decimal(str(int(float(eth_match.group(1)) * 2500)))
+            except Exception:
+                pass
+        elif usd_match:
+            try:
+                amount = float(usd_match.group(1).replace(",", ""))
+                suffix = usd_match.group(2).upper()
+                if suffix == "M": amount *= 1_000_000
+                elif suffix == "K": amount *= 1_000
+                elif suffix == "B": amount *= 1_000_000_000
+                loss_usd = Decimal(str(int(amount)))
+            except Exception:
+                pass
+
+    # Vulnerable contract address
+    vuln_match = re.search(r"(?:Vulnerable Contract|Attack Contract).*?0x([0-9a-fA-F]{40})", sol_text, re.IGNORECASE)
+    contract_address = None
+    if vuln_match:
+        contract_address = "0x" + vuln_match.group(1).lower()
+    else:
+        addrs = re.findall(r"0x[0-9a-fA-F]{40}", sol_text[:800])
+        if addrs:
+            contract_address = addrs[-1].lower()
+
+    # Attack type
+    attack_type = "Unknown"
+    for kw in ["Flash Loan", "Reentrancy", "Price Manipulation", "Access Control",
+               "Logic Error", "Rugpull", "Oracle Manipulation", "Integer Overflow"]:
+        if kw.lower() in sol_text.lower():
+            attack_type = kw
+            break
+
+    return {
+        "protocol_name": protocol_name,
+        "contract_address": contract_address,
+        "exploit_date": exploit_date,
+        "loss_usd": loss_usd,
+        "exploit_type": attack_type,
+        "is_resolved": False,
+    }
+
+
 @celery_app.task(name="app.workers.tasks.refresh_exploit_db", bind=True,
                  max_retries=3, default_retry_delay=300)
 def refresh_exploit_db(self):
@@ -731,7 +855,7 @@ def refresh_exploit_db(self):
             resp = client.get(DEFIHACKLABS_README_URL)
             resp.raise_for_status()
 
-        records = _parse_defihacklabs_readme(resp.text)
+        records = _fetch_defihacklabs_via_api()
         log.info("task.refresh_exploit_db.parsed", record_count=len(records))
 
         if not records:

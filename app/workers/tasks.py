@@ -12,10 +12,8 @@ Task hierarchy:
 """
 
 import asyncio
-import csv
-import io
+import os
 import re
-import xml.etree.ElementTree as ET
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -41,15 +39,7 @@ ROLE_WEIGHTS: dict[str, float] = {
     "treasury":   0.9,
 }
 
-# ── OFAC SDN XML URL ───────────────────────────────────────────────────────────
-OFAC_SDN_URL = "https://www.treasury.gov/ofac/downloads/consolidated/consolidated.xml"
-
-# ── DeFiHackLabs CSV URL ───────────────────────────────────────────────────────
-DEFIHACKLABS_CSV_URL = (
-    "https://raw.githubusercontent.com/SunWeb3Sec/DeFiHackLabs/"
-    "main/src/test/Exploit.t.sol"
-)
-# We parse the README which has the structured table
+# ── DeFiHackLabs GitHub repo base URL ─────────────────────────────────────────
 DEFIHACKLABS_README_URL = (
     "https://raw.githubusercontent.com/SunWeb3Sec/DeFiHackLabs/main/README.md"
 )
@@ -118,11 +108,15 @@ def _run_single_contract_score(
             "flags": [f.check for f in code_result.findings],
             "error": code_result.error,
         },
-        "ownership": {
-            "score": ownership_result.score if ownership_result else 50.0,
-            "flags": ownership_result.flags if ownership_result else [],
-            "details": ownership_result.details if ownership_result else {},
-        } if ownership_result else {"score": 50.0, "flags": [], "details": {}},
+        "ownership": (
+            {
+                "score": ownership_result.score,
+                "flags": ownership_result.flags,
+                "details": ownership_result.details,
+            }
+            if ownership_result
+            else {"score": 50.0, "flags": [], "details": {}}
+        ),
         "liquidity": {
             "score": liquidity_result.score,
             "tvl_usd": liquidity_result.tvl_usd,
@@ -237,12 +231,21 @@ def score_ecosystem(self, protocol_id: str, scan_type: str = "curated"):
         ownership_score = primary_result["ownership"]["score"] if primary_result else 50.0
         liquidity_score = primary_result["liquidity"]["score"] if primary_result else 75.0
 
-        # Compute composite score
         from app.core.scoring.aggregator import aggregate
         from app.core.scoring.audit_analyser import analyse_audit
-        audit_score      = analyse_audit(protocol_id=protocol_id)
-        compliance_score = 0.0
+        from app.core.scoring.compliance_analyser import analyse_compliance
+
+        audit_score = analyse_audit(protocol_id=protocol_id)
+
+        # Aggregate compliance across all contracts in this protocol
+        compliance_scores = [
+            analyse_compliance(address=c.address)
+            for c in contracts
+        ]
+        compliance_score = max(compliance_scores) if compliance_scores else 0.0
+
         governance_score = 50.0
+
         agg = aggregate(
             code_score=aggregated_code_score,
             ownership_score=ownership_score,
@@ -255,9 +258,8 @@ def score_ecosystem(self, protocol_id: str, scan_type: str = "curated"):
         grade     = agg["grade"]
 
         # Save ScoreReport to DB
-        from app.db.session import get_sync_session
-        from app.db.models import ScoreReport
         import uuid
+        from app.db.models import ScoreReport
         with get_sync_session() as db:
             report = ScoreReport(
                 id=str(uuid.uuid4()),
@@ -270,25 +272,29 @@ def score_ecosystem(self, protocol_id: str, scan_type: str = "curated"):
                 audit_score=round(audit_score, 2),
                 compliance_score=round(compliance_score, 2),
                 governance_score=round(governance_score, 2),
-                override_applied=False,
+                override_applied=agg.get("override_applied", False),
+                override_status=agg.get("override_status"),
                 score_version="1.0",
             )
             db.add(report)
             db.commit()
             log.info("task.score_ecosystem.saved",
-                     protocol=protocol.name, grade=grade, composite=composite)
+                     protocol=protocol.name, grade=grade, composite=composite,
+                     audit=audit_score, compliance=compliance_score)
 
         return {
-            "protocol_id": protocol_id,
-            "protocol_name": protocol.name,
-            "scan_type": scan_type,
-            "contracts_scored": len(contract_results),
+            "protocol_id":           protocol_id,
+            "protocol_name":         protocol.name,
+            "scan_type":             scan_type,
+            "contracts_scored":      len(contract_results),
             "aggregated_code_score": round(aggregated_code_score, 2),
-            "ownership_score": ownership_score,
-            "liquidity_score": liquidity_score,
-            "composite_score": round(composite, 2),
-            "grade": grade,
-            "contract_details": contract_results,
+            "ownership_score":       ownership_score,
+            "liquidity_score":       liquidity_score,
+            "audit_score":           round(audit_score, 2),
+            "compliance_score":      round(compliance_score, 2),
+            "composite_score":       round(composite, 2),
+            "grade":                 grade,
+            "contract_details":      contract_results,
         }
     except Exception as exc:
         log.error("task.score_ecosystem.error", protocol_id=protocol_id, error=str(exc))
@@ -328,7 +334,6 @@ def rescore_watchlist_addresses(self):
         from app.core.clients.chains import CHAIN_ID_TO_SLUG
         from sqlalchemy.orm import joinedload
 
-        # Fetch all watchlist entries with their contracts
         with get_sync_session() as db:
             watchlists = (
                 db.query(Watchlist)
@@ -345,23 +350,19 @@ def rescore_watchlist_addresses(self):
         for wl in watchlists:
             cid = str(wl.contract_id)
             if cid not in seen_contracts:
-                seen_contracts[cid] = {
-                    "contract": wl.contract,
-                    "watchers": [],
-                }
+                seen_contracts[cid] = {"contract": wl.contract, "watchers": []}
             seen_contracts[cid]["watchers"].append({
-                "chat_id": wl.telegram_chat_id,
+                "chat_id":   wl.telegram_chat_id,
                 "threshold": float(wl.threshold_score or 10.0),
             })
 
-        rescored = 0
+        rescored    = 0
         alerts_sent = 0
 
         for contract_id, data in seen_contracts.items():
-            contract = data["contract"]
+            contract   = data["contract"]
             chain_slug = CHAIN_ID_TO_SLUG.get(contract.chain_id, "ethereum")
 
-            # Get last score from DB
             with get_sync_session() as db:
                 last_report = (
                     db.query(ScoreReport)
@@ -373,7 +374,6 @@ def rescore_watchlist_addresses(self):
             old_score = float(last_report.composite_score) if last_report else None
             old_grade = last_report.grade if last_report else None
 
-            # Rescore
             try:
                 result = _run_single_contract_score(
                     address=contract.address,
@@ -386,13 +386,11 @@ def rescore_watchlist_addresses(self):
                           contract.address, exc)
                 continue
 
-            # ── Full composite: audit + compliance + aggregate ───────────────
             from app.core.scoring.audit_analyser import analyse_audit
             from app.core.scoring.compliance_analyser import analyse_compliance
             from app.core.scoring.aggregator import aggregate
             import uuid as _uuid
 
-            # Look up protocol_id if this is a curated contract
             with get_sync_session() as _db:
                 from app.db.models import ProtocolContract as _PC
                 pc_row = _db.query(_PC).filter(
@@ -401,7 +399,7 @@ def rescore_watchlist_addresses(self):
                 ).first()
                 protocol_id_str = str(pc_row.protocol_id) if pc_row else None
 
-            audit_score = analyse_audit(protocol_id=protocol_id_str)
+            audit_score      = analyse_audit(protocol_id=protocol_id_str)
             compliance_score = analyse_compliance(address=contract.address)
 
             agg = aggregate(
@@ -411,11 +409,9 @@ def rescore_watchlist_addresses(self):
                 audit_score=audit_score,
                 compliance_score=compliance_score,
             )
-
             new_score = agg["composite_score"]
             new_grade = agg["grade"]
 
-            # ── Store result in score_reports ─────────────────────────────────
             from app.db.models import Contract as _ContractModel
             with get_sync_session() as _db2:
                 c_row = _db2.query(_ContractModel).filter(
@@ -439,35 +435,28 @@ def rescore_watchlist_addresses(self):
                         override_status=agg["override_status"],
                     ))
 
-            # ── Check each watcher's threshold ────────────────────────────────
             if old_score is not None:
                 delta = abs(new_score - old_score)
                 for watcher in data["watchers"]:
                     if delta >= watcher["threshold"]:
                         alert_payload = {
-                            "chat_id": watcher["chat_id"],
-                            "address": contract.address,
-                            "chain": chain_slug,
-                            "old_score": old_score,
-                            "new_score": new_score,
-                            "old_grade": old_grade or "?",
-                            "new_grade": new_grade,
-                            "sub_scores": agg["sub_scores"],
-                            "new_flags": result["code"].get("flags", [])[:5],
+                            "chat_id":         watcher["chat_id"],
+                            "address":         contract.address,
+                            "chain":           chain_slug,
+                            "old_score":       old_score,
+                            "new_score":       new_score,
+                            "old_grade":       old_grade or "?",
+                            "new_grade":       new_grade,
+                            "sub_scores":      agg["sub_scores"],
+                            "new_flags":       result["code"].get("flags", [])[:5],
                             "override_status": agg["override_status"],
                         }
-                        asyncio.run(
-                            _publish_alert_async(alert_payload)
-                        )
+                        asyncio.run(_publish_alert_async(alert_payload))
                         alerts_sent += 1
 
         log.info("task.rescore_watchlist.complete rescored=%d alerts=%d",
                  rescored, alerts_sent)
-        return {
-            "status": "complete",
-            "rescored": rescored,
-            "alerts_sent": alerts_sent,
-        }
+        return {"status": "complete", "rescored": rescored, "alerts_sent": alerts_sent}
     except Exception as exc:
         log.error("task.rescore_watchlist.error: %s", exc)
         raise
@@ -482,136 +471,65 @@ async def _publish_alert_async(payload: dict) -> None:
 # OFAC TASKS
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _extract_eth_addresses_from_ofac(xml_text: str) -> set[str]:
-    """
-    Parse OFAC SDN XML and extract all Ethereum addresses.
-    Addresses appear in <feature> blocks with type 'Digital Currency Address - ETH'.
-    """
-    addresses = set()
-    try:
-        root = ET.fromstring(xml_text)
-        ns = {"ofac": "https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/XML"}
-
-        # Try namespaced parse first
-        for feature in root.iter():
-            tag = feature.tag.split("}")[-1] if "}" in feature.tag else feature.tag
-            if tag == "feature":
-                ftype = feature.find(".//{*}featureType")
-                fval  = feature.find(".//{*}versionDetail")
-                if ftype is not None and fval is not None:
-                    if "ETH" in (ftype.text or "").upper():
-                        addr = (fval.text or "").strip().lower()
-                        if re.match(r"^0x[0-9a-f]{40}$", addr):
-                            addresses.add(addr)
-    except ET.ParseError as e:
-        log.warning("ofac.xml_parse_error", error=str(e))
-
-    # Fallback: regex scan for any 0x ETH addresses in the raw XML
-    fallback = re.findall(r'0x[0-9a-fA-F]{40}', xml_text)
-    for addr in fallback:
-        addresses.add(addr.lower())
-
-    return addresses
-
-
 @celery_app.task(name="app.workers.tasks.refresh_ofac_list", bind=True,
                  max_retries=3, default_retry_delay=300)
 def refresh_ofac_list(self):
     """
-    Download OFAC SDN XML → extract ETH addresses → upsert to ofac_addresses.
-    Runs daily at 3am UTC.
+    Download OFAC SDN + CONSOLIDATED XML → extract ETH addresses → upsert.
+    Delegates to app.core.overrides.ofac.sync_ofac_list() which uses the
+    official OFAC SLS File Download API:
+      https://sanctionslistservice.ofac.treas.gov/api/download/SDN.XML
+      https://sanctionslistservice.ofac.treas.gov/api/download/CONSOLIDATED.XML
+
+    Runs daily at 3am UTC via Celery beat.
     """
     log.info("task.refresh_ofac.start")
     try:
-        # Download SDN list
-        with httpx.Client(timeout=60.0, follow_redirects=True) as client:
-            resp = client.get(OFAC_SDN_URL)
-            resp.raise_for_status()
-        xml_text = resp.text
-        addresses = _extract_eth_addresses_from_ofac(xml_text)
-        log.info("task.refresh_ofac.parsed", address_count=len(addresses))
+        from app.core.overrides.ofac import sync_ofac_list
+        result = sync_ofac_list()
 
-        if not addresses:
-            log.warning("task.refresh_ofac.no_addresses_found")
-            return {"status": "complete", "addresses_found": 0}
+        if "error" in result:
+            log.error("task.refresh_ofac.failed error=%s", result["error"])
+            raise self.retry(exc=RuntimeError(result["error"]), countdown=300)
 
-        # Upsert to DB
-        from app.db.session import get_sync_session
-        from app.db.models import OfacAddress
-
-        inserted = 0
-        already_exists = 0
-
-        with get_sync_session() as db:
-            existing = {
-                r.address for r in db.query(OfacAddress.address).all()
-            }
-            for addr in addresses:
-                if addr in existing:
-                    already_exists += 1
-                    continue
-                db.add(OfacAddress(
-                    address=addr,
-                    listed_at=datetime.utcnow(),
-                    was_delisted=False,
-                ))
-                inserted += 1
-
-        log.info("task.refresh_ofac.complete",
-                 inserted=inserted, already_exists=already_exists)
+        log.info(
+            "task.refresh_ofac.complete added=%s delisted=%s relisted=%s total_active=%s",
+            result.get("added"), result.get("delisted"),
+            result.get("relisted"), result.get("total_active"),
+        )
         return {
-            "status": "complete",
-            "addresses_found": len(addresses),
-            "inserted": inserted,
-            "already_exists": already_exists,
+            "status":       "complete",
+            "added":        result.get("added", 0),
+            "delisted":     result.get("delisted", 0),
+            "relisted":     result.get("relisted", 0),
+            "total_active": result.get("total_active", 0),
         }
-    except httpx.HTTPError as exc:
-        log.error("task.refresh_ofac.http_error", error=str(exc))
-        raise self.retry(exc=exc)
     except Exception as exc:
-        log.error("task.refresh_ofac.error", error=str(exc))
-        raise self.retry(exc=exc)
+        if not hasattr(exc, "exc"):
+            log.error("task.refresh_ofac.error error=%s", str(exc))
+            raise self.retry(exc=exc)
+        raise
 
 
 @celery_app.task(name="app.workers.tasks.check_ofac_delisting", bind=True,
                  max_retries=2, default_retry_delay=120)
 def check_ofac_delisting(self):
     """
-    Compare current OFAC SDN list against previously flagged addresses.
-    Any address no longer present → mark was_delisted=True, set delisted_at.
+    Re-sync OFAC list and mark any addresses no longer present as delisted.
     Runs daily at 3:30am UTC (30 min after refresh_ofac_list).
+    sync_ofac_list() handles delisting detection itself — addresses absent
+    from the fresh download are marked was_delisted=True automatically.
     """
     log.info("task.check_ofac_delisting.start")
     try:
-        # Re-download current SDN (refresh_ofac_list already ran 30min ago,
-        # but we need the current set to compare)
-        with httpx.Client(timeout=60.0, follow_redirects=True) as client:
-            resp = client.get(OFAC_SDN_URL)
-            resp.raise_for_status()
-        current_addresses = _extract_eth_addresses_from_ofac(resp.text)
-
-        from app.db.session import get_sync_session
-        from app.db.models import OfacAddress
-
-        delisted = 0
-        with get_sync_session() as db:
-            # Get all addresses still marked as active (not yet delisted)
-            active_rows = db.query(OfacAddress).filter(
-                OfacAddress.was_delisted == False  # noqa: E712
-            ).all()
-
-            for row in active_rows:
-                if row.address not in current_addresses:
-                    row.was_delisted = True
-                    row.delisted_at = datetime.utcnow()
-                    delisted += 1
-                    log.info("task.check_ofac_delisting.resolved",
-                             address=row.address)
-
-        log.info("task.check_ofac_delisting.complete", delisted=delisted)
-        return {"status": "complete", "delisted_count": delisted}
+        from app.core.overrides.ofac import sync_ofac_list, check_ofac_delisting as _check
+        sync_ofac_list()
+        delisting_result = _check()
+        delisted_count   = delisting_result.get("delisted_count", 0)
+        log.info("task.check_ofac_delisting.complete delisted_count=%d", delisted_count)
+        return {"status": "complete", "delisted_count": delisted_count}
     except Exception as exc:
-        log.error("task.check_ofac_delisting.error", error=str(exc))
+        log.error("task.check_ofac_delisting.error error=%s", str(exc))
         raise self.retry(exc=exc)
 
 
@@ -619,181 +537,102 @@ def check_ofac_delisting(self):
 # DEFIHACKLABS PARSER
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _parse_defihacklabs_readme(markdown_text: str) -> list[dict]:
-    """
-    Parse the DeFiHackLabs README.md exploit table.
-
-    Table format (markdown):
-    | Date | Project | Funds Lost | Type | ... |
-
-    We extract rows where we can identify an EVM address, date, and loss amount.
-    Addresses appear in the 'Link' column or inline in rows.
-    """
-    records = []
-    lines = markdown_text.splitlines()
-
-    in_table = False
-    headers = []
-
-    for line in lines:
-        line = line.strip()
-        if not line.startswith("|"):
-            in_table = False
-            continue
-
-        cells = [c.strip() for c in line.strip("|").split("|")]
-
-        # Detect header row
-        if not in_table and any(
-            h in ("".join(cells)).lower()
-            for h in ["date", "project", "funds", "lost"]
-        ):
-            headers = [c.lower().replace(" ", "_") for c in cells]
-            in_table = True
-            continue
-
-        # Skip separator rows
-        if all(set(c.replace("-", "").replace(":", "").replace(" ", "")) <= {""} for c in cells):
-            continue
-
-        if not in_table or not headers:
-            continue
-
-        row = dict(zip(headers, cells))
-
-        # Extract date
-        raw_date = row.get("date", "") or row.get("time", "")
-        parsed_date = None
-        for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%Y/%m/%d", "%d-%m-%Y"):
-            try:
-                parsed_date = datetime.strptime(raw_date[:10], fmt).date()
-                break
-            except ValueError:
-                continue
-
-        # Extract loss amount (look for $ figures)
-        loss_text = row.get("funds_lost", "") or row.get("amount", "") or ""
-        loss_usd = None
-        loss_match = re.search(r"\$?([\d,]+(?:\.\d+)?)\s*([MmKkBb]?)", loss_text.replace(",", ""))
-        if loss_match:
-            try:
-                amount = float(loss_match.group(1))
-                suffix = loss_match.group(2).upper()
-                if suffix == "M":
-                    amount *= 1_000_000
-                elif suffix == "K":
-                    amount *= 1_000
-                elif suffix == "B":
-                    amount *= 1_000_000_000
-                loss_usd = Decimal(str(int(amount)))
-            except (ValueError, Exception):
-                pass
-
-        # Extract contract address from any cell
-        all_text = " ".join(cells)
-        addr_matches = re.findall(r'0x[0-9a-fA-F]{40}', all_text)
-        contract_address = addr_matches[0].lower() if addr_matches else None
-
-        # Extract protocol name
-        protocol_name = (
-            row.get("project", "") or
-            row.get("protocol", "") or
-            row.get("name", "")
-        ).strip()
-        # Strip markdown links: [Name](url) → Name
-        protocol_name = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', protocol_name)
-
-        if not protocol_name:
-            continue
-
-        records.append({
-            "protocol_name": protocol_name,
-            "contract_address": contract_address,
-            "exploit_date": parsed_date,
-            "loss_usd": loss_usd,
-            "exploit_type": row.get("type", "") or row.get("attack_type", ""),
-            "is_resolved": False,  # default — manual resolution via admin endpoint
-        })
-
-    return records
-
-
 def _fetch_defihacklabs_via_api() -> list[dict]:
     """
     Use GitHub API to list all year-month folders in src/test,
     then fetch each .sol file and parse @KeyInfo blocks.
+
+    Requires GITHUB_TOKEN env var on Railway worker to avoid the 60 req/hr
+    unauthenticated rate limit (authenticated limit: 5,000 req/hr).
+    Add to Railway worker env vars: GITHUB_TOKEN=ghp_...
     """
-    records = []
+    records  = []
     base_url = "https://api.github.com/repos/SunWeb3Sec/DeFiHackLabs/contents/src/test"
+
+    github_token = os.environ.get("GITHUB_TOKEN", "").strip()
     headers = {"Accept": "application/vnd.github.v3+json"}
+    if github_token:
+        headers["Authorization"] = f"token {github_token}"
+        log.info("defihacklabs.fetch authenticated github requests")
+    else:
+        log.warning(
+            "defihacklabs.fetch no GITHUB_TOKEN — unauthenticated limit is "
+            "60 req/hr, may fail. Set GITHUB_TOKEN on Railway worker."
+        )
 
     try:
         with httpx.Client(timeout=30, follow_redirects=True) as client:
-            # Get list of year-month directories
             resp = client.get(base_url, headers=headers)
+
+            if resp.status_code == 403:
+                log.warning(
+                    "defihacklabs.rate_limited remaining=%s — add GITHUB_TOKEN",
+                    resp.headers.get("X-RateLimit-Remaining", "?"),
+                )
+                return []
+
             if resp.status_code != 200:
                 log.warning("defihacklabs.api_error status=%s", resp.status_code)
                 return []
 
             dirs = [d for d in resp.json() if d.get("type") == "dir"]
+            log.info("defihacklabs.dirs_found count=%d", len(dirs))
 
             for d in dirs:
-                year_month = d["name"]  # e.g. "2023-01"
-                dir_resp = client.get(d["url"], headers=headers)
+                year_month = d["name"]
+                dir_resp   = client.get(d["url"], headers=headers)
+
+                if dir_resp.status_code == 403:
+                    log.warning("defihacklabs.rate_limited_on_dir dir=%s stopping", year_month)
+                    break
+
                 if dir_resp.status_code != 200:
                     continue
 
-                sol_files = [f for f in dir_resp.json()
-                             if f.get("name", "").endswith(".sol")]
+                sol_files = [f for f in dir_resp.json() if f.get("name", "").endswith(".sol")]
 
                 for sol_file in sol_files:
                     try:
-                        raw_url = sol_file["download_url"]
+                        raw_url = sol_file.get("download_url")
                         if not raw_url:
                             continue
                         sol_resp = client.get(raw_url, timeout=15)
                         if sol_resp.status_code != 200:
                             continue
-                        record = _parse_sol_file(
-                            sol_resp.text,
-                            year_month,
-                            sol_file["name"]
-                        )
+                        record = _parse_sol_file(sol_resp.text, year_month, sol_file["name"])
                         if record:
                             records.append(record)
                     except Exception as exc:
-                        log.warning("defihacklabs.sol_parse_error file=%s error=%s",
+                        log.warning("defihacklabs.sol_error file=%s: %s",
                                     sol_file.get("name"), str(exc))
-    except Exception as exc:
-        log.warning("defihacklabs.fetch_error error=%s", str(exc))
 
+    except Exception as exc:
+        log.warning("defihacklabs.fetch_error: %s", str(exc))
+
+    log.info("defihacklabs.fetch.complete records=%d", len(records))
     return records
 
 
 def _parse_sol_file(sol_text: str, year_month: str, filename: str) -> dict | None:
     """Parse @KeyInfo block from a DeFiHackLabs .sol exploit file."""
-    # Protocol name from filename
     protocol_name = re.sub(r"_exp.*", "", filename.replace(".sol", ""))
     protocol_name = protocol_name.replace("_", " ").strip()
     if not protocol_name:
         return None
 
-    # Only parse if some loss info exists
     if not re.search(r"Total [Ll]ost", sol_text):
         return None
 
-    # Date from year_month directory
     try:
-        parts = year_month.split("-")
+        parts        = year_month.split("-")
         exploit_date = datetime.strptime(f"{parts[0]}-{parts[1]}-01", "%Y-%m-%d").date()
     except Exception:
         exploit_date = None
 
-    # Loss amount — handle both formats:
-    # New: "// @KeyInfo - Total Lost : $1.2M"
-    # Old: "// Total lost: 144 BNB"
     loss_usd = None
-    keyinfo = re.search(r"(?:@KeyInfo.*?Total Lost|Total lost).*?:(.+)", sol_text, re.IGNORECASE)
+    keyinfo  = re.search(
+        r"(?:@KeyInfo.*?Total Lost|Total lost).*?:(.+)", sol_text, re.IGNORECASE
+    )
     if keyinfo:
         loss_text = keyinfo.group(1).strip()
         eth_match = re.search(r"([\d.]+)\s*ETH", loss_text, re.IGNORECASE)
@@ -807,15 +646,17 @@ def _parse_sol_file(sol_text: str, year_month: str, filename: str) -> dict | Non
             try:
                 amount = float(usd_match.group(1).replace(",", ""))
                 suffix = usd_match.group(2).upper()
-                if suffix == "M": amount *= 1_000_000
+                if suffix == "M":   amount *= 1_000_000
                 elif suffix == "K": amount *= 1_000
                 elif suffix == "B": amount *= 1_000_000_000
                 loss_usd = Decimal(str(int(amount)))
             except Exception:
                 pass
 
-    # Vulnerable contract address
-    vuln_match = re.search(r"(?:Vulnerable Contract|Attack Contract).*?0x([0-9a-fA-F]{40})", sol_text, re.IGNORECASE)
+    vuln_match = re.search(
+        r"(?:Vulnerable Contract|Attack Contract).*?0x([0-9a-fA-F]{40})",
+        sol_text, re.IGNORECASE,
+    )
     contract_address = None
     if vuln_match:
         contract_address = "0x" + vuln_match.group(1).lower()
@@ -824,7 +665,6 @@ def _parse_sol_file(sol_text: str, year_month: str, filename: str) -> dict | Non
         if addrs:
             contract_address = addrs[-1].lower()
 
-    # Attack type
     attack_type = "Unknown"
     for kw in ["Flash Loan", "Reentrancy", "Price Manipulation", "Access Control",
                "Logic Error", "Rugpull", "Oracle Manipulation", "Integer Overflow"]:
@@ -833,12 +673,12 @@ def _parse_sol_file(sol_text: str, year_month: str, filename: str) -> dict | Non
             break
 
     return {
-        "protocol_name": protocol_name,
+        "protocol_name":    protocol_name,
         "contract_address": contract_address,
-        "exploit_date": exploit_date,
-        "loss_usd": loss_usd,
-        "exploit_type": attack_type,
-        "is_resolved": False,
+        "exploit_date":     exploit_date,
+        "loss_usd":         loss_usd,
+        "exploit_type":     attack_type,
+        "is_resolved":      False,
     }
 
 
@@ -846,17 +686,13 @@ def _parse_sol_file(sol_text: str, year_month: str, filename: str) -> dict | Non
                  max_retries=3, default_retry_delay=300)
 def refresh_exploit_db(self):
     """
-    Pull DeFiHackLabs README → parse exploit table → upsert to exploit_records.
+    Pull DeFiHackLabs .sol files via GitHub API → parse → upsert exploit_records.
     Runs weekly Sunday 4am UTC.
     """
     log.info("task.refresh_exploit_db.start")
     try:
-        with httpx.Client(timeout=60.0, follow_redirects=True) as client:
-            resp = client.get(DEFIHACKLABS_README_URL)
-            resp.raise_for_status()
-
         records = _fetch_defihacklabs_via_api()
-        log.info("task.refresh_exploit_db.parsed", record_count=len(records))
+        log.info("task.refresh_exploit_db.parsed record_count=%d", len(records))
 
         if not records:
             log.warning("task.refresh_exploit_db.no_records")
@@ -866,14 +702,13 @@ def refresh_exploit_db(self):
         from app.db.models import ExploitRecord
 
         inserted = 0
-        skipped = 0
+        skipped  = 0
 
         with get_sync_session() as db:
             for rec in records:
-                # Deduplicate: skip if same protocol + date already exists
                 existing = db.query(ExploitRecord).filter(
                     ExploitRecord.protocol_name == rec["protocol_name"],
-                    ExploitRecord.exploit_date == rec["exploit_date"],
+                    ExploitRecord.exploit_date  == rec["exploit_date"],
                 ).first()
 
                 if existing:
@@ -890,17 +725,14 @@ def refresh_exploit_db(self):
                 ))
                 inserted += 1
 
-        log.info("task.refresh_exploit_db.complete",
-                 inserted=inserted, skipped=skipped)
+        log.info("task.refresh_exploit_db.complete inserted=%d skipped=%d",
+                 inserted, skipped)
         return {
-            "status": "complete",
-            "records_parsed": len(records),
-            "inserted": inserted,
+            "status":            "complete",
+            "records_parsed":    len(records),
+            "inserted":          inserted,
             "skipped_duplicates": skipped,
         }
-    except httpx.HTTPError as exc:
-        log.error("task.refresh_exploit_db.http_error", error=str(exc))
-        raise self.retry(exc=exc)
     except Exception as exc:
-        log.error("task.refresh_exploit_db.error", error=str(exc))
+        log.error("task.refresh_exploit_db.error error=%s", str(exc))
         raise self.retry(exc=exc)

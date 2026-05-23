@@ -32,7 +32,8 @@ from app.bot.alerts import AlertSubscriber
 
 log = logging.getLogger(__name__)
 
-API_BASE = "http://api:8000/api/v1"
+import os
+API_BASE = os.environ.get("BOT_API_BASE", "http://api:8000/api/v1")
 
 VALID_CHAINS = {
     "ethereum", "polygon", "arbitrum",

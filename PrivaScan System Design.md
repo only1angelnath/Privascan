@@ -38,7 +38,7 @@
 6. [Multi-Contract Coverage Strategy](#6-multi-contract-coverage-strategy)
 7. [System Architecture](#7-system-architecture)
 8. [Data Sources & Integration Strategy](#8-data-sources--integration-strategy)
-9. [TVL Data Strategy — DefiLlama + Dune SIM Fallback](#9-tvl-data-strategy--defillama--dune-sim-fallback)
+9. [TVL Data Strategy — DefiLlama + Alchemy Fallback](#9-tvl-data-strategy--defillama--alchemy-fallback)
 10. [Risk Scoring Model & Visual Design](#10-risk-scoring-model--visual-design)
 11. [Override Rules — Resolved State Handling](#11-override-rules--resolved-state-handling)
 12. [Slither Integration — Full Capability Map](#12-slither-integration--full-capability-map)
@@ -62,11 +62,11 @@
 
 PrivaScan (privascan.xyz) is a production-grade, open-source smart contract risk scoring API built for EVM-compatible privacy protocols. It scores entire protocol ecosystems — not just token contracts — analysing every deployed contract including privacy pools, routers, vaults, verifiers, and governance contracts as a unified risk surface.
 
-V1 covers 19 curated EVM privacy protocols with confirmed DefiLlama TVL data, plus an open scanner for any EVM address. For the small number of protocols not indexed on DefiLlama, the Dune SIM API provides real-time on-chain balance data with a 48-hour cache TTL instead of 24 hours (rewarding data quality with longer freshness windows).
+V1 covers 19 curated EVM privacy protocols with confirmed DefiLlama TVL data, plus an open scanner for any EVM address. For the small number of protocols not indexed on DefiLlama, Alchemy getTokenBalances + CoinGecko pricing provides real-time on-chain balance data with a 48-hour cache TTL instead of 24 hours (rewarding data quality with longer freshness windows). NOTE: Dune SIM sunsets August 1, 2026 — migration to Alchemy completed Day 17.
 
 The scoring model is fully rule-based and deterministic. Every score is explainable, traceable, and reproducible. Hard override rules now include a resolved state pathway — when an exploit is remediated or an OFAC listing is removed, the protocol can exit the override and re-enter normal scoring territory, with the resolution event permanently logged in the score history.
 
-**Total external infrastructure cost at MVP: $0** (CoinGecko paid key owned by developer, Dune SIM key available, all other sources free tier).
+**Total external infrastructure cost at MVP: $0** (CoinGecko paid key owned by developer, Alchemy key available, all other sources free tier). Dune SIM removed — sunset August 1, 2026.
 
 ---
 
@@ -103,8 +103,8 @@ Track A: 14 curated protocols, 6-hour scheduled rescore. Track B: any EVM contra
 ### 4.4 Multi-Contract Ecosystem Scoring
 We score all deployed contracts of a protocol, not just the token. Pools, routers, vaults, verifiers, timelock, governance — all analysed as a unified risk surface with an ecosystem-level composite score.
 
-### 4.5 Dune SIM API for TVL Gap Fill
-For EVM protocols not indexed on DefiLlama, the Dune SIM API provides real-time per-address token balances with USD pricing — accurate TVL directly from chain state. Cache TTL is extended to 48 hours for Dune-sourced TVL (vs 24 hours for community scans) because Dune data is freshly priced and accurate. CoinGecko paid key is used for token price lookups when needed.
+### 4.5 Alchemy + CoinGecko for TVL Gap Fill
+For EVM protocols not indexed on DefiLlama, Alchemy getTokenBalances provides real-time per-address ERC-20 holdings, priced via CoinGecko — accurate TVL directly from chain state. Cache TTL is extended to 48 hours for Alchemy-sourced TVL (vs 24 hours for community scans) because the data is freshly priced and accurate. NOTE: Previously used Dune SIM API which sunsets August 1, 2026. Migration completed Day 17.
 
 ### 4.6 Resolved Override States
 OFAC sanctions and exploit overrides are not permanent. When a protocol resolves an exploit (bug fix, compensation, re-audit) or is removed from the OFAC SDN list, the override lifts and the protocol re-enters normal scoring. The resolution event is permanently appended to the score history for full auditability.
@@ -122,7 +122,7 @@ privascan.xyz — API: api.privascan.xyz · Frontend: privascan.xyz · Bot: @Pri
 
 ### 5.2 Track B — Open EVM Contract Scanner
 
-Any user-submitted EVM contract address on any supported chain. Triggered on-demand. Cache TTL: 24 hours (or 48 hours if Dune SIM is the TVL source). Label: `"scan_type": "community"`. Personal watchlist alerts only. Rate limit: 5 scans/hour anonymous, 50/hour free key.
+Any user-submitted EVM contract address on any supported chain. Triggered on-demand. Cache TTL: 24 hours (or 48 hours if Alchemy is the TVL source). Label: `"scan_type": "community"`. Personal watchlist alerts only. Rate limit: 5 scans/hour anonymous, 50/hour free key.
 
 ### 5.3 Request Lifecycle
 
@@ -211,7 +211,7 @@ For Track B (open scanner, single address), the contract is scored individually.
 
 ### 6.4 TVL Aggregation Across Contracts
 
-For protocols with multiple pool contracts, TVL is summed across all pool addresses. DefiLlama protocol-level TVL already aggregates across pools. For Dune SIM gap fill, we query the balance of each pool contract individually and sum.
+For protocols with multiple pool contracts, TVL is summed across all pool addresses. DefiLlama protocol-level TVL already aggregates across pools. For Alchemy gap fill, we query the token balances of each pool contract individually via getTokenBalances and sum USD values using CoinGecko pricing.
 
 ---
 
@@ -226,9 +226,10 @@ For protocols with multiple pool contracts, TVL is summed across all pool addres
 │  Etherscan v2        DefiLlama Free API    Alchemy RPC                  │
 │  (source code,       (TVL, fees,           (on-chain state:             │
 │   ABI, creator,       30d trend,            owner(), proxy slots,       │
-│   logs, internal tx)  protocol metadata)    multisig, token dist.)      │
+│   logs, internal tx)  protocol metadata     multisig, token dist.)      │
+│                       + privacy_tech)                                        │
 │                                                                          │
-│  Dune SIM API        OFAC SDN XML          DeFiHackLabs DB              │
+│  Alchemy TVL API     OFAC SDN XML          DeFiHackLabs DB              │
 │  (real-time token    (sanctions list,      (exploit records,            │
 │   balances for TVL   daily refresh)        weekly GitHub pull)          │
 │   gap fill — paid)                                                       │
@@ -256,7 +257,7 @@ For protocols with multiple pool contracts, TVL is summed across all pool addres
 │  contracts):                                                             │
 │  [1] Code risk   — Slither per-contract + role-weighted aggregation     │
 │  [2] Ownership   — Web3.py per ecosystem: admin keys, proxy, multisig   │
-│  [3] Liquidity   — DefiLlama → Dune SIM fallback → CoinGecko pricing   │
+│  [3] Liquidity   — DefiLlama → Alchemy fallback → CoinGecko pricing    │
 │  [4] Audit       — Internal DB · formula per protocol                   │
 │  [5] Compliance  — OFAC SDN · DeFiHackLabs · resolved state check      │
 │  [6] Governance  — On-chain HHI across token + governance contracts     │
@@ -295,13 +296,13 @@ TVL confidence when DefiLlama is source: `"tvl_confidence": "high"`
 
 ---
 
-### 8.3 Dune SIM API — TVL Gap Fill
+### 8.3 Alchemy + CoinGecko — TVL Gap Fill (replaces Dune SIM, Day 17)
 
 **URL:** `https://api.sim.dune.com/v1/evm/` · **Auth:** Dune API key (paid, developer-owned)
 **Purpose:** Real-time per-address token balance reads for EVM protocols not indexed on DefiLlama
 **Cost per request:** Fixed 1 Compute Unit
 
-The Dune SIM Balances endpoint returns all token holdings of a contract address with USD pricing — ideal for computing TVL across multiple pool contracts.
+Alchemy getTokenBalances returns all ERC-20 holdings of a contract address. CoinGecko provides USD pricing per token. Combined they give accurate TVL directly from chain state — ideal for computing TVL for community-scanned contracts not indexed on DefiLlama. Dune SIM (previously used here) sunsets August 1, 2026 and was removed in Day 17.
 
 ```python
 # app/core/clients/dune_sim.py
@@ -363,7 +364,7 @@ async def get_ecosystem_tvl_dune(pool_addresses: list[str], chain_id: int) -> fl
 
 **Cache TTL for Dune-sourced TVL:** 48 hours
 
-**Note (Day 16):** `DuneSimClient` overrides `_get_client()` to always return a fresh `httpx.AsyncClient` instead of caching a singleton. This prevents `Event loop is closed` errors when Celery workers call `asyncio.run()` repeatedly across tasks. (extended from 24h default — Dune data is directly on-chain priced, warranting a longer freshness window while conserving Compute Units).
+**Note (Day 16):** `DuneSimClient` overrides `_get_client()` to always return a fresh `httpx.AsyncClient` instead of caching a singleton. This prevents `Event loop is closed` errors when Celery workers call `asyncio.run()` repeatedly across tasks.
 
 **TVL confidence when Dune is source:** `"tvl_confidence": "medium"` (accurate but protocol-level aggregation not as comprehensive as DefiLlama's adapter).
 
@@ -373,7 +374,7 @@ async def get_ecosystem_tvl_dune(pool_addresses: list[str], chain_id: int) -> fl
 
 **URL:** `https://api.coingecko.com/api/v3`
 **Auth:** Paid API key (developer-owned) — higher rate limits, better reliability
-**V1 use:** Token price lookups to support Dune SIM TVL calculation when ERC-20 prices are needed; also provides protocol market cap and token price context for score reports.
+**V1 use:** Token price lookups to support Alchemy TVL calculation when ERC-20 prices are needed; also provides protocol market cap and token price context for score reports.
 
 ```python
 # app/core/clients/coingecko.py
@@ -471,7 +472,7 @@ Modifiers:
 | Etherscan v2 | Source, ABI, creator, logs | Free key | $0 | — |
 | DefiLlama | TVL, fees, trends | None | $0 | `high` |
 | Alchemy RPC | On-chain state | Free key | $0 | — |
-| Dune SIM API | Real-time contract balances | Paid key (dev-owned) | Paid | `medium` |
+| Alchemy API | Real-time contract token balances (replaces Dune SIM) | Existing key | Free tier | `medium` |
 | CoinGecko | Token price lookups | Paid key (dev-owned) | Paid | — |
 | OFAC SDN XML | Sanctions list | None | $0 | — |
 | DeFiHackLabs | Exploit records | None (GitHub) | $0 | — |
@@ -480,7 +481,7 @@ Modifiers:
 
 ---
 
-## 9. TVL Data Strategy — DefiLlama + Dune SIM Fallback
+## 9. TVL Data Strategy — DefiLlama + Alchemy Fallback
 
 ### 9.1 Decision Tree
 
@@ -497,10 +498,10 @@ For each protocol needing TVL:
   │                   │
   │                   ├── YES → Use protocol adoption proxy
   │                   │         tvl_confidence = "not_applicable"
-  │                   │         BUT ALSO fetch Dune SIM TVL for wrapper contracts
+  │                   │         BUT ALSO fetch Alchemy TVL for wrapper contracts
   │                   │         and add to score report as supplementary data
   │                   │
-  │                   └── NO → Query Dune SIM API for all pool contract balances
+  │                   └── NO → Query Alchemy getTokenBalances for pool contract balances
   │                             Sum across all pool addresses
   │                             tvl_confidence = "medium"
   │                             cache TTL = 48h (extended for Dune data quality)
@@ -538,7 +539,7 @@ async def get_zama_liquidity_data() -> dict:
 | Value | Meaning | Cache TTL |
 |---|---|---|
 | `high` | DefiLlama adapter with full TVL history | 6h (curated) |
-| `medium` | Dune SIM real-time balance reads | 48h |
+| `medium` | Alchemy real-time balance reads | 48h |
 | `not_applicable` | Adoption proxy only (no TVL-holding contracts) | 6h |
 
 ---
@@ -551,7 +552,7 @@ async def get_zama_liquidity_data() -> dict:
 |---|---|---|---|
 | 1 | Code Risk | 30% | Slither across all ecosystem contracts |
 | 2 | Ownership Risk | 25% | Web3.py across all admin roles |
-| 3 | Liquidity Risk | 20% | DefiLlama → Dune SIM |
+| 3 | Liquidity Risk | 20% | DefiLlama → Alchemy fallback |
 | 4 | Audit History | 12% | Internal audit DB |
 | 5 | Compliance Flags | 8% | OFAC + DeFiHackLabs |
 | 6 | Governance Concentration | 5% | On-chain HHI |
@@ -816,7 +817,7 @@ privascan/
 │   │   │   ├── aggregator.py      # Weighted composite + override engine
 │   │   │   ├── code_risk.py       # Slither: per-contract + role-weighted
 │   │   │   ├── ownership.py       # Web3.py across ecosystem contracts
-│   │   │   ├── liquidity.py       # DefiLlama → Dune SIM → adoption proxy
+│   │   │   ├── liquidity.py       # DefiLlama → Alchemy fallback → adoption proxy
 │   │   │   ├── audit_history.py
 │   │   │   ├── compliance.py      # OFAC + DeFiHackLabs + resolved state
 │   │   │   └── governance.py      # HHI across token + governance contracts
@@ -825,7 +826,7 @@ privascan/
 │   │   │   ├── defillama.py
 │   │   │   ├── web3_client.py
 │   │   │   ├── ofac.py
-│   │   │   ├── dune_sim.py        # Dune SIM API — TVL gap fill
+│   │   │   ├── dune.py            # Alchemy + CoinGecko TVL (replaces Dune SIM, Day 17)
 │   │   │   └── coingecko.py       # Paid key — price lookups
 │   │   ├── detectors/
 │   │   │   ├── mixer_reentrancy.py
@@ -860,7 +861,7 @@ privascan/
 ## 14. Database Schema
 
 ```sql
--- Protocol registry (curated protocol metadata)
+-- Protocol registry (curated protocol metadata, includes privacy_tech + privacy_tech_label from Day 18)
 CREATE TABLE protocols (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name            VARCHAR(200) NOT NULL,
@@ -1378,7 +1379,7 @@ Redis token bucket rate limiting. EIP-55 address validation. Chain whitelist enf
 |---|---|---|
 | 1–2 | Project scaffold · Railway setup · Postgres schema (incl. protocol_contracts, override_history tables) · Alembic · Redis · Celery · `.env.example` | Skeleton running, DB migrated |
 | 3–4 | Etherscan client · Slither (detectors + upgradeability + similarity + 5 custom detectors) · Role-weighted code risk aggregator · Multi-contract analysis loop | Code risk sub-score across ecosystem contracts |
-| 5–6 | Web3.py ownership (per ecosystem) · DefiLlama client · Dune SIM client · Liquidity analyser with decision tree · CoinGecko price client | Ownership + liquidity sub-scores, all TVL sources wired |
+| 5–6 | Web3.py ownership (per ecosystem) · DefiLlama client · Alchemy TVL client · Liquidity analyser with decision tree · CoinGecko price client | Ownership + liquidity sub-scores, all TVL sources wired |
 | 7 | Score aggregator · Override engine with resolved state · FastAPI endpoints · Redis caching with variable TTL | `GET /score/{chain}/{address}` returning full scored reports |
 
 ### Week 2 — Remaining Scores + Distribution + Visual Polish
@@ -1459,9 +1460,9 @@ Redis token bucket rate limiting. EIP-55 address validation. Chain whitelist enf
 | 9 | Zama fhEVM | Ethereum | FHE confidential | `zama` | DefiLlama + adoption proxy | High | 5 |
 | 10 | Cyclone Protocol | ETH, BNB, Polygon | Mixer fork | `cyclone` | DefiLlama (partial) | Medium | 23 |
 | 11 | FOOM Cash | ETH, Base | Privacy mixer | `foom-cash` | DefiLlama (minimal) | Medium | 4 |
-| 12 | AnomaPay | ETH, ARB, Base, OP | Privacy payment adapter | — | Dune SIM (fallback) | Medium | 5 |
-| 13 | Horizen | Ethereum | zk-enabled L2 infrastructure | — | Dune SIM (fallback) | Medium | 14 |
-| 14 | iExec| Ethereum, ARB | Decentralized Computing Marketplace | — | Dune SIM (fallback) | Medium | 16 |
+| 12 | AnomaPay | ETH, ARB, Base, OP | Privacy payment adapter | — | Alchemy (fallback) | Medium | 5 |
+| 13 | Horizen | Ethereum | zk-enabled L2 infrastructure | — | Alchemy (fallback) | Medium | 14 |
+| 14 | iExec | Ethereum, ARB | Decentralized Computing Marketplace | — | Alchemy (fallback) | Medium | 16 |
 
 **Removed from V1 (reason):**
 - Tornado Cash Nova — merged into TC registry (same operator)
@@ -1505,7 +1506,7 @@ defillama-sdk>=0.1.0
 
 ---
 
-*PrivaScan System Design v5.2 — Updated Day 16*
+*PrivaScan System Design v5.3 — Updated Day 16 (post-demo)*
 *privascan.xyz · api.privascan.xyz · @PrivaScanBot*
 *V1: 14 EVM protocols · 197 contracts across 9 chains · Full ecosystem multi-contract scoring · Resolved override states · Visual design system · Day 16: Dune event loop fix, request form live*
 *V2: Non-EVM (Zcash, Monero) · ML sub-scores · Webhooks · Batch scoring · Additional EVM protocols*

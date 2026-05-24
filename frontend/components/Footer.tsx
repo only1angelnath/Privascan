@@ -15,6 +15,7 @@ const COLS = {
     { l: 'Authentication',  h: '/docs#auth'    },
   ],
   Community: [
+    { l: 'Brand Kit',      h: '/brand'                        },
     { l: 'Twitter / X',      h: 'https://x.com/privascan'       },
     { l: 'Telegram Channel', h: 'https://t.me/privascan'        },
     { l: 'Telegram Bot',     h: 'https://t.me/PrivaScanBot'     },

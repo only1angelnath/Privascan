@@ -370,3 +370,123 @@ async def get_score(
         chain, address, result["composite_score"], result["grade"],
     )
     return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PRIVATE ENDPOINT — full findings for CDR vault
+# ─────────────────────────────────────────────────────────────────────────────
+
+from app.core.scoring.remediation import get_remediation
+
+@router.get("/{chain}/{address}/private")
+async def get_private_score(
+    chain: str,
+    address: str,
+    request: Request,
+    api_key_info: dict = Depends(get_api_key),
+):
+    """
+    Returns the full private score report including raw Slither findings,
+    per-finding remediation recommendations, and ownership detail.
+    Requires API key. Always fresh — not cached.
+    Used by privascan-cdr to mint CDR vaults.
+    """
+    _validate(chain, address)
+
+    log.info("private_score.start chain=%s address=%s", chain, address)
+    loop = asyncio.get_event_loop()
+
+    try:
+        result = await asyncio.wait_for(
+            loop.run_in_executor(_executor, _run_pipeline_sync, address, chain),
+            timeout=PIPELINE_TIMEOUT,
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=504,
+            detail=f"Scoring timed out after {PIPELINE_TIMEOUT}s.",
+        )
+    except Exception as exc:
+        log.error("private_score.error: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Scoring pipeline failed: {str(exc)[:300]}",
+        )
+
+    result.pop("_tvl_source_internal", None)
+    result = await apply_overrides(address, result)
+
+    # ── Build enriched findings with location + remediation ──────────────────
+    code_detail = result.get("details", {}).get("code", {})
+    raw_findings = code_detail.get("findings", [])
+
+    enriched_findings = []
+    for f in raw_findings:
+        enriched_findings.append({
+            "check": f.get("check", ""),
+            "severity": f.get("impact", "").upper(),
+            "confidence": f.get("confidence", "").upper(),
+            "description": f.get("description", ""),
+            "location": f.get("description", "").split("\n")[0][:120],
+            "is_custom": f.get("is_custom", False),
+            "remediation": get_remediation(f.get("check", "")),
+        })
+
+    # ── Sort by severity ─────────────────────────────────────────────────────
+    severity_order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2, "INFORMATIONAL": 3}
+    enriched_findings.sort(key=lambda x: severity_order.get(x["severity"], 99))
+
+    # ── Ownership detail ─────────────────────────────────────────────────────
+    ownership_detail = result.get("details", {}).get("ownership", {})
+    ownership_flags = ownership_detail.get("flags", [])
+    ownership_findings = []
+    for flag in ownership_flags:
+        ownership_findings.append({
+            "finding_type": flag,
+            "detail": flag,
+            "risk_level": "HIGH" if any(k in flag.lower() for k in ["eoa", "no timelock", "unprotected"]) else "MEDIUM",
+            "remediation": get_remediation(flag.lower().replace(" ", "-")),
+        })
+
+    # ── Remediation summary (top 5 by severity) ──────────────────────────────
+    remediation_list = []
+    for i, f in enumerate(enriched_findings[:5], start=1):
+        remediation_list.append({
+            "priority": i,
+            "finding_ref": f["check"],
+            "action": f["remediation"],
+            "effort": "HIGH" if f["severity"] == "HIGH" else "MEDIUM",
+        })
+
+    high_count = sum(1 for f in enriched_findings if f["severity"] == "HIGH")
+    medium_count = sum(1 for f in enriched_findings if f["severity"] == "MEDIUM")
+
+    private_report = {
+        # Public fields
+        "address": result["address"],
+        "chain": result["chain"],
+        "chain_id": result["chain_id"],
+        "composite_score": result["composite_score"],
+        "grade": result["grade"],
+        "grade_label": result.get("grade_label", ""),
+        "scored_at": result["scored_at"],
+        "sub_scores": result.get("sub_scores", {}),
+
+        # Private additions
+        "slither_findings": enriched_findings,
+        "ownership_findings": ownership_findings,
+        "remediation": remediation_list,
+
+        # Metadata
+        "slither_finding_count": len(enriched_findings),
+        "slither_finding_high": high_count,
+        "slither_finding_medium": medium_count,
+        "raw_findings_available": len(enriched_findings) > 0,
+        "source_verified": code_detail.get("is_verified", False),
+    }
+
+    log.info(
+        "private_score.complete chain=%s address=%s findings=%d",
+        chain, address, len(enriched_findings),
+    )
+    return private_report

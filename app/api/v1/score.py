@@ -394,27 +394,35 @@ async def get_private_score(
     _validate(chain, address)
 
     log.info("private_score.start chain=%s address=%s", chain, address)
-    loop = asyncio.get_event_loop()
 
-    try:
-        result = await asyncio.wait_for(
-            loop.run_in_executor(_executor, _run_pipeline_sync, address, chain),
-            timeout=PIPELINE_TIMEOUT,
-        )
-    except asyncio.TimeoutError:
-        raise HTTPException(
-            status_code=504,
-            detail=f"Scoring timed out after {PIPELINE_TIMEOUT}s.",
-        )
-    except Exception as exc:
-        log.error("private_score.error: %s", exc, exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Scoring pipeline failed: {str(exc)[:300]}",
-        )
+    # Check Redis cache first — curated protocols are pre-scored with
+    # full Slither findings. Fresh pipeline would lose those because
+    # Etherscan source fetch needs API key configured on Railway.
+    result = await get_cached_score(chain, address)
 
-    result.pop("_tvl_source_internal", None)
-    result = await apply_overrides(address, result)
+    if not result:
+        log.info("private_score.cache_miss — running fresh pipeline")
+        loop = asyncio.get_event_loop()
+        try:
+            result = await asyncio.wait_for(
+                loop.run_in_executor(_executor, _run_pipeline_sync, address, chain),
+                timeout=PIPELINE_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=504,
+                detail=f"Scoring timed out after {PIPELINE_TIMEOUT}s.",
+            )
+        except Exception as exc:
+            log.error("private_score.error: %s", exc, exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Scoring pipeline failed: {str(exc)[:300]}",
+            )
+        result.pop("_tvl_source_internal", None)
+        result = await apply_overrides(address, result)
+    else:
+        log.info("private_score.cache_hit chain=%s address=%s", chain, address)
 
     # ── Build enriched findings with location + remediation ──────────────────
     code_detail = result.get("details", {}).get("code", {})
